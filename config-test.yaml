@@ -10,6 +10,8 @@ site:
 output:
   atom_feed: "atom.xml"
   html_view: "planet.html"
+  css: []
+  logo: ""    # optional logo image path/URL for the HTML view
 
 # Item limits
 limits:

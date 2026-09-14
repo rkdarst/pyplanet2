@@ -29,7 +29,9 @@ Settings live in `config.yaml` (or the config file passed as the
 first argument to the script). Edit `config.yaml` to customize:
 
 - `site` - Site title and URLs (`title`, `site_url`, `atom_feed_url`)
-- `output` - Output filenames (`atom_feed`, `html_view`)
+- `output` - Output filenames (`atom_feed`, `html_view`), an optional
+  `css` list of stylesheet paths/URLs inserted after the built-in
+  styling of the HTML view, and an optional `logo` image path/URL
 - `limits` - `max_feed_items` (default: 100) and `html_view_limit` (default: 10)
 - `feeds` - List of feeds to aggregate; each entry has a `url`
   (local paths work for offline testing) and optional `name`,

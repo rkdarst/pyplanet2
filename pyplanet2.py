@@ -126,15 +126,18 @@ def generate_html_view(items, output_file, template_dir, config):
         if item.get("summary"):
             item["summary"] = sanitize_html(item["summary"])
     
-    # Setup Jinja2 environment
-    env = Environment(loader=FileSystemLoader(template_dir))
+    # Setup Jinja2 environment (autoescape on; only bleach-sanitized
+    # values are marked |safe in the template)
+    env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
     template = env.get_template("planet.html")
     
     # Render template
     html_content = template.render(
         posts=html_items,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        site_title=config["site"]["title"]
+        site_title=config["site"]["title"],
+        css_files=config["output"].get("css", []),
+        logo=config["output"].get("logo", "")
     )
     
     Path(output_file).write_text(html_content, encoding="utf-8")
