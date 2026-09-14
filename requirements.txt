@@ -2,3 +2,4 @@ feedparser
 jinja2
 bleach
 pyyaml
+feedgenerator

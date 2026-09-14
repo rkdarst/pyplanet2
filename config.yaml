@@ -5,6 +5,9 @@ site:
   title: "Planet"
   site_url: "https://example.com/planet/"
   atom_feed_url: "https://example.com/planet/atom.xml"
+  # feed_guid: "urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6"
+  #   Optional stable feed id; defaults to atom_feed_url.
+  #   Set it if you want the id to survive the feed URL moving.
 
 # Output file paths
 output:

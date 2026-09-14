@@ -8,7 +8,6 @@ Configuration is loaded from a YAML file (config.yaml by default,
 or pass a path as the first argument).
 """
 import argparse
-import html
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +15,7 @@ from pathlib import Path
 import bleach
 import feedparser
 import yaml
+from feedgenerator import Atom1Feed
 from jinja2 import Environment, FileSystemLoader
 
 # Default configuration file
@@ -83,34 +83,28 @@ def generate_atom_feed(items, output_file, config):
     """Generate an Atom feed from the items."""
     # Limit to max_feed_items for the feed
     feed_items = items[:config["limits"]["max_feed_items"]]
-    
-    now = datetime.now(timezone.utc)
-    
-    # Build Atom XML
-    parts = [
-        '<?xml version="1.0" encoding="utf-8"?>',
-        '<feed xmlns="http://www.w3.org/2005/Atom">',
-        f'  <title>{escape_xml(config["site"]["title"])}</title>',
-        f'  <updated>{now.strftime("%Y-%m-%dT%H:%M:%SZ")}</updated>',
-        '  <id>urn:uuid:planet-feed</id>',
-        f'  <link href="{escape_xml(config["site"]["site_url"])}" rel="alternate"/>',
-        f'  <link href="{escape_xml(config["site"]["atom_feed_url"])}" rel="self"/>',
-    ]
+
+    feed = Atom1Feed(
+        title=config["site"]["title"],
+        link=config["site"]["site_url"],
+        description="",
+        feed_url=config["site"]["atom_feed_url"],
+        # Stable feed id (Atom <id>): defaults to the feed's own URL;
+        # set site.feed_guid to keep a permanent id if the URL ever moves.
+        feed_guid=config["site"].get("feed_guid", config["site"]["atom_feed_url"]),
+    )
 
     for item in feed_items:
-        parts.append("  <entry>")
-        parts.append(f'    <title>{escape_xml(item["title"])}</title>')
-        parts.append(f'    <id>{escape_xml(item["link"])}</id>')
-        parts.append(f'    <link href="{escape_xml(item["link"])}"/>')
-        parts.append(f'    <updated>{item["dt"].strftime("%Y-%m-%dT%H:%M:%SZ")}</updated>')
-        parts.append(f'    <author><name>{escape_xml(item["feed_title"])}</name></author>')
-        if item["summary"]:
-            parts.append(f'    <summary>{escape_xml(item["summary"])}</summary>')
-        parts.append("  </entry>")
+        feed.add_item(
+            title=item["title"],
+            link=item["link"],
+            description=item["summary"] or None,
+            unique_id=item["link"],
+            updateddate=item["dt"],
+            author_name=item["feed_title"],
+        )
 
-    parts.append("</feed>")
-    
-    Path(output_file).write_text("\n".join(parts), encoding="utf-8")
+    Path(output_file).write_text(feed.writeString("utf-8"), encoding="utf-8")
     print(f"Generated Atom feed: {output_file} ({len(feed_items)} items)")
 
 
@@ -137,7 +131,8 @@ def generate_html_view(items, output_file, template_dir, config):
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         site_title=config["site"]["title"],
         css_files=config["output"].get("css", []),
-        logo=config["output"].get("logo", "")
+        logo=config["output"].get("logo", ""),
+        atom_feed_url=config["site"]["atom_feed_url"]
     )
     
     Path(output_file).write_text(html_content, encoding="utf-8")
@@ -172,11 +167,6 @@ def sanitize_html(text):
         attributes=allowed_attributes,
         strip=True
     )
-
-
-def escape_xml(text):
-    """Escape special characters for XML."""
-    return html.escape(text, quote=True)
 
 
 def main(argv=None):
