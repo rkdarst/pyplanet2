@@ -1,0 +1,37 @@
+name: Build planet
+on:
+  push:
+    branches: [master]        # deploy only from the default branch
+  schedule:
+    - cron: "23 7 * * *"      # daily; off the top of the hour (UTC) to dodge delays
+  workflow_dispatch:          # manual "Run workflow" button
+
+permissions:
+  contents: write             # push the gh-pages branch
+  pages: write                # deploy to the Pages environment
+  id-token: write             # for the workflow-managed Pages token
+
+concurrency:
+  group: planet-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python pyplanet2.py nordic-rse.yaml   # explicit config, live feeds
+      - name: Stage site
+        run: |
+          mkdir -p site
+          cp planet.html site/index.html           # site root page
+          cp atom.xml site/atom.xml                # feed keeps its name
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

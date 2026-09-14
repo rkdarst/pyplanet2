@@ -41,3 +41,22 @@ first argument to the script). Edit `config.yaml` to customize:
 - `feeds` - List of feeds to aggregate; each entry has a `url`
   (local paths work for offline testing) and optional `name`,
   `author`, and `site` metadata
+
+## Deployment
+
+A GitHub Actions workflow (`.github/workflows/build.yml`) rebuilds
+the planet on every push to `master` and once a day on a schedule,
+then deploys `planet.html` (as `index.html`) and `atom.xml` to
+GitHub Pages via `peaceiris/actions-gh-pages`.
+
+Setup:
+
+1. Enable Pages once: repo Settings -> Pages -> Source: *GitHub Actions*.
+2. Point `site.site_url` and `site.atom_feed_url` in `config.yaml`
+   at your Pages URLs, e.g. `https://<user>.github.io/<repo>/` and
+   `https://<user>.github.io/<repo>/atom.xml`, so the links embedded
+   in the HTML view and feed resolve correctly.
+
+Note: scheduled workflows are delayed at peak times and are
+automatically disabled after 60 days without repository activity
+(they re-enable on the next push).
