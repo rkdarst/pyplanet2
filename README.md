@@ -19,14 +19,18 @@ makes a combined Atom feed. It also outputs a .html file of the last
 
 ```bash
 python3 pyplanet2.py
+# or with a specific config file:
+python3 pyplanet2.py path/to/config.yaml
 ```
 
 ## Configuration
 
-Edit `pyplanet2.py` to customize:
+Settings live in `config.yaml` (or the config file passed as the
+first argument to the script). Edit `config.yaml` to customize:
 
-- `FEEDS` - List of RSS/Atom feed URLs to aggregate
-- `MAX_FEED_ITEMS` - Maximum number of items in the Atom feed (default: 100)
-- `HTML_VIEW_LIMIT` - Number of posts to show in HTML view (default: 10)
-- `ATOM_FEED_FILE` - Output filename for the Atom feed
-- `HTML_VIEW_FILE` - Output filename for the HTML view
+- `site` - Site title and URLs (`title`, `site_url`, `atom_feed_url`)
+- `output` - Output filenames (`atom_feed`, `html_view`)
+- `limits` - `max_feed_items` (default: 100) and `html_view_limit` (default: 10)
+- `feeds` - List of feeds to aggregate; each entry has a `url`
+  (local paths work for offline testing) and optional `name`,
+  `author`, and `site` metadata

@@ -4,9 +4,12 @@ Blog aggregator that combines RSS feeds into:
 1. An aggregated Atom feed (atom.xml)
 2. A static HTML view of the last 10 posts (planet.html)
 
-Configuration is loaded from config.yaml
+Configuration is loaded from a YAML file (config.yaml by default,
+or pass a path as the first argument).
 """
+import argparse
 import html
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,11 +18,19 @@ import feedparser
 import yaml
 from jinja2 import Environment, FileSystemLoader
 
-# Load configuration
-CONFIG_FILE = Path(__file__).parent / "config.yaml"
+# Default configuration file
+DEFAULT_CONFIG_FILE = Path(__file__).parent / "config.yaml"
 
-with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-    CONFIG = yaml.safe_load(f)
+
+def load_config(path):
+    """Load configuration from a YAML file."""
+    config_file = Path(path)
+    if not config_file.exists():
+        print(f"ERROR: config file not found: {config_file}", file=sys.stderr)
+        sys.exit(1)
+    with open(config_file, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
 
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -34,11 +45,11 @@ def parse_dt(entry):
     return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-def fetch_all_items():
+def fetch_all_items(config):
     """Fetch and parse all items from configured feeds."""
     items = []
 
-    for feed_config in CONFIG["feeds"]:
+    for feed_config in config["feeds"]:
         feed_url = feed_config["url"]
         feed = feedparser.parse(feed_url)
         
@@ -68,10 +79,10 @@ def fetch_all_items():
     return items
 
 
-def generate_atom_feed(items, output_file):
+def generate_atom_feed(items, output_file, config):
     """Generate an Atom feed from the items."""
     # Limit to max_feed_items for the feed
-    feed_items = items[:CONFIG["limits"]["max_feed_items"]]
+    feed_items = items[:config["limits"]["max_feed_items"]]
     
     now = datetime.now(timezone.utc)
     
@@ -79,11 +90,11 @@ def generate_atom_feed(items, output_file):
     parts = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<feed xmlns="http://www.w3.org/2005/Atom">',
-        f'  <title>{escape_xml(CONFIG["site"]["title"])}</title>',
+        f'  <title>{escape_xml(config["site"]["title"])}</title>',
         f'  <updated>{now.strftime("%Y-%m-%dT%H:%M:%SZ")}</updated>',
         '  <id>urn:uuid:planet-feed</id>',
-        f'  <link href="{escape_xml(CONFIG["site"]["site_url"])}" rel="alternate"/>',
-        f'  <link href="{escape_xml(CONFIG["site"]["atom_feed_url"])}" rel="self"/>',
+        f'  <link href="{escape_xml(config["site"]["site_url"])}" rel="alternate"/>',
+        f'  <link href="{escape_xml(config["site"]["atom_feed_url"])}" rel="self"/>',
     ]
 
     for item in feed_items:
@@ -103,10 +114,10 @@ def generate_atom_feed(items, output_file):
     print(f"Generated Atom feed: {output_file} ({len(feed_items)} items)")
 
 
-def generate_html_view(items, output_file, template_dir):
+def generate_html_view(items, output_file, template_dir, config):
     """Generate a static HTML view using Jinja2 template."""
     # Limit to html_view_limit for the HTML preview
-    html_items = items[:CONFIG["limits"]["html_view_limit"]]
+    html_items = items[:config["limits"]["html_view_limit"]]
     
     # Prepare items for template with formatted date and sanitized summary
     for item in html_items:
@@ -123,7 +134,7 @@ def generate_html_view(items, output_file, template_dir):
     html_content = template.render(
         posts=html_items,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        site_title=CONFIG["site"]["title"]
+        site_title=config["site"]["title"]
     )
     
     Path(output_file).write_text(html_content, encoding="utf-8")
@@ -165,18 +176,26 @@ def escape_xml(text):
     return html.escape(text, quote=True)
 
 
-def main():
+def main(argv=None):
     """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Blog aggregator: combines RSS feeds into an Atom feed and HTML view.")
+    parser.add_argument("config", nargs="?", default=str(DEFAULT_CONFIG_FILE),
+                        help="path to config file (default: config.yaml next to the script)")
+    args = parser.parse_args(argv)
+
+    config = load_config(args.config)
+
     print("Fetching feeds...")
-    items = fetch_all_items()
+    items = fetch_all_items(config)
     print(f"Total items fetched: {len(items)}")
-    
+
     print("Generating Atom feed...")
-    generate_atom_feed(items, CONFIG["output"]["atom_feed"])
-    
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+
     print("Generating HTML view...")
-    generate_html_view(items, CONFIG["output"]["html_view"], TEMPLATE_DIR)
-    
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+
     print("Done!")
 
 

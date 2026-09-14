@@ -2,7 +2,7 @@
 
 # General site settings
 site:
-  title: "Planet"
+  title: "Test Planet"
   site_url: "https://example.com/planet/"
   atom_feed_url: "https://example.com/planet/atom.xml"
 
@@ -18,12 +18,13 @@ limits:
 
 # Feed configuration with metadata
 feeds:
-  - url: "https://rkd.zgib.net/blog/atom.xml"
-    name: "RKD Blog"
-    author: "RKD"
-    site: "https://rkd.zgib.net"
 
-  - url: "https://digitalflapjack.com/index.xml"
-    name: "Digital Flapjack"
-    author: "Digital Flapjack"
-    site: "https://digitalflapjack.com"
+  - url: "test-data/atom.xml"
+    name: "Atom test"
+    author: "a"
+    site: "example.org"
+
+  - url: "test-data/rss.xml"
+    name: "RSS test"
+    author: "b"
+    site: "example.org"
