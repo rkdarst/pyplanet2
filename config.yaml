@@ -1,0 +1,29 @@
+# Planet Blog Aggregator Configuration
+
+# General site settings
+site:
+  title: "Planet"
+  site_url: "https://example.com/planet/"
+  atom_feed_url: "https://example.com/planet/atom.xml"
+
+# Output file paths
+output:
+  atom_feed: "atom.xml"
+  html_view: "planet.html"
+
+# Item limits
+limits:
+  max_feed_items: 100    # Maximum items in the aggregated Atom feed
+  html_view_limit: 10    # Number of posts to show in HTML view
+
+# Feed configuration with metadata
+feeds:
+  - url: "https://rkd.zgib.net/blog/atom.xml"
+    name: "RKD Blog"
+    author: "RKD"
+    site: "https://rkd.zgib.net"
+
+  - url: "https://digitalflapjack.com/index.xml"
+    name: "Digital Flapjack"
+    author: "Digital Flapjack"
+    site: "https://digitalflapjack.com"

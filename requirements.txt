@@ -1,2 +1,4 @@
 feedparser
 jinja2
+bleach
+pyyaml
