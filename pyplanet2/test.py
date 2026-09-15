@@ -87,6 +87,16 @@ def test_resolve_urls_option(tmp_path):
     assert "http://example.org/images/pic.png" not in off[0]["summary"]
 
 
+def test_author_only_when_configured(tmp_path):
+    """An unset author stays empty (the HTML then omits it) instead of
+    defaulting to the feed name."""
+    base = {"url": str(REPO / "test-data" / "atom.xml")}
+    unset = fetch_all_items({"feeds": [dict(base)]})
+    assert unset[0]["author"] == ""
+    configured = fetch_all_items({"feeds": [{**base, "author": "Jane"}]})
+    assert configured[0]["author"] == "Jane"
+
+
 def make_atom_config(**feed_opts):
     """Config for fetch_all_items() over the Atom sample feed."""
     feed = {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test"}
@@ -178,6 +188,8 @@ def test_cli_end_to_end(tmp_path):
     # grey placeholder box
     assert "https://example.org/atom-icon.png" in html_text
     assert "icon-placeholder" in html_text
+    # no feed configures an author, so the meta line omits it entirely
+    assert "Author:" not in html_text
 
     atom_text = (tmp_path / "atom.xml").read_text(encoding="utf-8")
     ElementTree.fromstring(atom_text)  # raises if not valid XML

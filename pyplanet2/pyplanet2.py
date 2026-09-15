@@ -135,7 +135,7 @@ def fetch_all_items(config):
         
         # Use configured name, or fall back to feed title or URL
         feed_title = feed_config.get("name", feed.feed.get("title", feed_url))
-        author = feed_config.get("author", feed_title)
+        author = feed_config.get("author", "")
         site = feed_config.get("site", feed_url)
         icon = feed_config.get("icon", "")
 

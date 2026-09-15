@@ -53,7 +53,8 @@ first argument to the script). Edit `config.yaml` to customize:
   (local paths work for offline testing) and optional `name`,
   `author`, `site`, and `icon` metadata.  The `icon` (a face/logo
   image URL) renders beside each post, linked to `site` when set;
-  feeds without an icon get a grey placeholder box. An entry may also set
+  feeds without an icon get a grey placeholder box.  An unset
+  `author` is simply omitted from the post meta line. An entry may also set
   `resolve_urls: true` to rewrite relative image/link URLs inside
   that feed's items against each item's own link. By default
   relative URLs are resolved against the *feed* URL, which breaks
