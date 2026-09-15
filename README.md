@@ -7,7 +7,16 @@ makes a combined Atom feed. It also outputs a .html file of the last
 ## Output files
 
 - `atom.xml` - The aggregated Atom feed with up to 100 items
-- `planet.html` - A static HTML view of the last 10 posts
+- `planet.html` - A static HTML view of the last 10 posts; each post
+  is shown in a card, and posts longer than about one screen are
+  collapsed with an Expand/Collapse button that also indicates how
+  long the post is ("250% of screen"; recomputed on window resize).
+  The button sticks to the lower-left corner, so a long expanded post
+  can be re-collapsed from any scroll position.
+  Fully functional without JavaScript, which just disables the
+  collapsing.  The collapsed height can be overridden by defining
+  the `--post-clamp` CSS variable in a stylesheet listed under
+  `output.css`.
 
 ## Requirements
 

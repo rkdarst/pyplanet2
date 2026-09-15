@@ -16,14 +16,40 @@
     .logo-placeholder { background: #ddd; }
     .site-title { margin: 0; font-size: 1.5em; }
     .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
-    .post { padding: 1em 0; border-bottom: 1px solid #ddd; }
-    .post-title { margin: 0 0 0.25em; font-size: 1.15em; }
+    .post { padding: 1em 1.25em; margin-bottom: 1.25em;
+            border: 1px solid #ddd; border-radius: 8px; }
+    .post-title { margin: 0 0 0.25em; }
     .post-link { color: #06c; text-decoration: none; }
     .post-meta { font-size: 0.85em; color: #666; }
     .feed-title { font-weight: bold; }
-    .summary { margin-top: 0.5em; }
+    .summary { margin-top: 0.5em; position: relative;
+               max-height: var(--post-clamp, 45vh); overflow: hidden; }
+    /* Summaries are clamped by default; the script at the end of the
+       page measures each one (possible only because it is constrained
+       here) and marks overflowing ones .clamped, the rest .unclamped.
+       Without JavaScript nothing marks them .clamped, so no fade or
+       buttons appear, and the <noscript> style below lifts the
+       clamping entirely.  Override the height via --post-clamp in a
+       stylesheet listed under output.css in the config. */
+    .summary.unclamped { max-height: none; overflow: visible; }
+    .summary.clamped::after {
+        content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+        height: 3em; background: linear-gradient(transparent, #fff);
+    }
+    .post.expanded .summary { max-height: none; overflow: visible; }
+    .post.expanded .summary.clamped::after { display: none; }
+    .expand-toggle { display: none; margin-top: 0.4em; padding: 0.15em 0.8em;
+                     position: sticky; bottom: 0.75em; left: 0;
+                     width: fit-content;
+                     border: 1px solid #ddd; border-radius: 1.25em;
+                     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+                     color: #06c; font-size: 0.85em; cursor: pointer; }
+    .summary.clamped + .expand-toggle { display: block; }
     .site-footer { margin-top: 2em; font-size: 0.8em; color: #999; }
   </style>
+  <noscript><style>
+    .summary { max-height: none; overflow: visible; }
+  </style></noscript>
   <!-- External stylesheets (output.css in config) load after the built-in
        <style>, so their rules win. -->
   {%- for css_file in css_files %}
@@ -37,7 +63,7 @@
     {% else %}
     <div class="logo logo-placeholder"></div>
     {% endif %}
-    <h1 class="site-title">{{ site_title }}</h1>
+    <title class="site-title">{{ site_title }}</title>
   </header>
 
   <main class="planet">
@@ -46,7 +72,7 @@
 
     {% for item in posts %}
     <article class="post">
-      <h2 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h2>
+      <h1 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h1>
       <div class="post-meta">
         <span class="feed-title">{{ item.feed_title }}</span>
         <span class="post-date">{{ item.date }}</span>
@@ -55,6 +81,7 @@
       </div>
       {% if item.summary %}
       <div class="summary">{{ item.summary|safe }}</div>
+      <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
       {% endif %}
     </article>
     {% endfor %}
@@ -63,5 +90,62 @@
   <footer class="site-footer">
     <span class="generator">pyplanet2 blog aggregator</span>
   </footer>
+
+  <script>
+    // Summaries are clamped by default in CSS; classify() measures them
+    // once all images/fonts have loaded (measuring earlier would
+    // misjudge posts as "short") and marks overflowing ones .clamped
+    // (button visible, percentage shown) and the rest .unclamped.
+    // Expanded posts cannot be overflow-measured (their clamp is
+    // lifted), so on resize they only get a refreshed percentage and
+    // are properly re-classified when collapsed.
+    var posts = [];
+    document.querySelectorAll("article.post").forEach(function (post) {
+      var summary = post.querySelector(".summary");
+      var toggle = post.querySelector(".expand-toggle");
+      if (!summary || !toggle) { return; }
+      posts.push([post, summary, toggle]);
+      toggle.addEventListener("click", function () {
+        var expanded = post.classList.toggle("expanded");
+        toggle.setAttribute("aria-expanded", expanded);
+        if (expanded) {
+          toggle.innerHTML = "Collapse &#9652;";
+        } else {
+          toggle.innerHTML = summary.dataset.pct
+            ? "Expand &#9662; (" + summary.dataset.pct + "% of screen)"
+            : "Expand &#9662;";
+          classifyOne(post, summary, toggle);  // refresh for next expand
+        }
+      });
+    });
+
+    function percent(summary) {
+      return Math.round(summary.scrollHeight / window.innerHeight * 10) * 10;
+    }
+
+    function classifyOne(post, summary, toggle) {
+      summary.dataset.pct = percent(summary);
+      if (post.classList.contains("expanded")) {
+        return;  // clamp lifted: overflow state unchanged until collapse
+      }
+      var overflowing = summary.scrollHeight > summary.clientHeight + 24;
+      summary.classList.toggle("clamped", overflowing);
+      summary.classList.toggle("unclamped", !overflowing);
+      if (overflowing) {
+        toggle.innerHTML = "Expand &#9662; (" + summary.dataset.pct + "% of screen)";
+      }
+    }
+
+    function classify() {
+      posts.forEach(function (entry) { classifyOne.apply(null, entry); });
+    }
+
+    window.addEventListener("load", classify);
+    var resizeTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(classify, 150);
+    });
+  </script>
 </body>
 </html>
