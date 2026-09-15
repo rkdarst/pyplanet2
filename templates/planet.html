@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ site_title }}</title>
+  <link rel="alternate" type="application/atom+xml" title="{{ site_title }} Atom feed" href="{{ atom_feed_url }}">
+  <style>
+    body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+           max-width: 46em; margin: 0 auto; padding: 1em;
+           color: #222; line-height: 1.5; }
+    .site-header { display: flex; align-items: center; gap: 0.75em;
+                   padding-bottom: 0.5em; border-bottom: 2px solid #444; }
+    .logo { width: 48px; height: 48px; flex-shrink: 0;
+            border-radius: 4px; }
+    .logo-placeholder { background: #ddd; }
+    .site-title { margin: 0; font-size: 1.5em; }
+    .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
+    .post { padding: 1em 0; border-bottom: 1px solid #ddd; }
+    .post-title { margin: 0 0 0.25em; font-size: 1.15em; }
+    .post-link { color: #06c; text-decoration: none; }
+    .post-meta { font-size: 0.85em; color: #666; }
+    .feed-title { font-weight: bold; }
+    .summary { margin-top: 0.5em; }
+    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999; }
+  </style>
+  <!-- External stylesheets (output.css in config) load after the built-in
+       <style>, so their rules win. -->
+  {%- for css_file in css_files %}
+  <link rel="stylesheet" href="{{ css_file }}">
+  {%- endfor %}
+</head>
+<body>
+  <header class="site-header">
+    {% if logo %}
+    <img class="logo" src="{{ logo }}" alt="{{ site_title }} logo">
+    {% else %}
+    <div class="logo logo-placeholder"></div>
+    {% endif %}
+    <h1 class="site-title">{{ site_title }}</h1>
+  </header>
+
+  <main class="planet">
+    <p class="generated">Generated <span class="generated-at">{{ generated_at }}</span> ·
+      <a class="feed-link" href="{{ atom_feed_url }}">Atom feed</a></p>
+
+    {% for item in posts %}
+    <article class="post">
+      <h2 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h2>
+      <div class="post-meta">
+        <span class="feed-title">{{ item.feed_title }}</span>
+        <span class="post-date">{{ item.date }}</span>
+        {% if item.author %}<span class="post-author"> · Author: {{ item.author }}</span>{% endif %}
+        {% if item.site %}<span class="post-site"> · Site: <a href="{{ item.site }}">{{ item.site }}</a></span>{% endif %}
+      </div>
+      {% if item.summary %}
+      <div class="summary">{{ item.summary|safe }}</div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </main>
+
+  <footer class="site-footer">
+    <span class="generator">pyplanet2 blog aggregator</span>
+  </footer>
+</body>
+</html>
