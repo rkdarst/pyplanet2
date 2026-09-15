@@ -1,2 +1,4 @@
 /planet.html
 /atom.xml
+__pycache__/
+.pytest_cache/
