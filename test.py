@@ -13,6 +13,8 @@ import pytest
 import yaml
 
 from pyplanet2 import fetch_all_items, make_urls_absolute, safe_link
+import imagecache
+from imagecache import localize_images, rewrite_images
 
 REPO = Path(__file__).parent
 
@@ -177,3 +179,101 @@ def test_cli_end_to_end(tmp_path):
     atom_text = (tmp_path / "atom.xml").read_text(encoding="utf-8")
     ElementTree.fromstring(atom_text)  # raises if not valid XML
     assert "First item title" in atom_text
+
+
+# --- image cache ---------------------------------------------------------
+
+def img_config(tmp_path, **img_opts):
+    images = {"dir": str(tmp_path / "images")}
+    images.update(img_opts)
+    return {"site": {"site_url": "https://planet.example/"}, "images": images}
+
+
+def test_localize_downloads_and_rewrites(tmp_path):
+    url = "https://img.example/a.png"
+    calls = []
+
+    def fetch(u, headers):
+        calls.append(u)
+        return 200, b"PNGDATA", {"content-type": "image/png", "etag": '"v1"'}
+
+    items = [{"summary": f'<p><img src="{url}"></p>', "icon": url}]
+    localize_images(items, img_config(tmp_path), fetcher=fetch)
+    assert calls == [url]  # fetched once although used by img and icon
+    mapping = items[0]["img_map"]
+    assert mapping[url]["atom"].startswith("https://planet.example/")
+    assert items[0]["icon"] == mapping[url]["html"]
+    html = rewrite_images(items[0]["summary"], mapping, "html")
+    assert f'src="{url}"' not in html
+    assert f'src={mapping[url]["html"]}' in html.replace('"', "")
+    cached = [p for p in (tmp_path / "images").iterdir() if p.suffix == ".png"]
+    assert cached and cached[0].read_bytes() == b"PNGDATA"
+    assert len(cached[0].stem) == 16  # hash-only file name
+
+
+def test_localize_skips_fresh_cache(tmp_path):
+    url = "https://img.example/a.png"
+
+    def ok(u, headers):
+        return 200, b"X", {"content-type": "image/png"}
+
+    localize_images([{"summary": f'<img src="{url}">', "icon": ""}],
+                    img_config(tmp_path), fetcher=ok)
+    calls = []
+
+    def never(u, headers):
+        calls.append(u)
+        return 200, b"", {}
+
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path), fetcher=never)
+    assert calls == []  # within TTL: no network at all
+    assert url not in rewrite_images(items[0]["summary"],
+                                     items[0]["img_map"], "html")
+
+
+def test_localize_revalidates_with_304(tmp_path):
+    url = "https://img.example/a.png"
+
+    def ok(u, headers):
+        return 200, b"PNG", {"content-type": "image/png", "etag": '"v1"'}
+
+    localize_images([{"summary": f'<img src="{url}">', "icon": ""}],
+                    img_config(tmp_path), fetcher=ok)
+    seen = []
+
+    def not_modified(u, headers):
+        seen.append(dict(headers))
+        return 304, b"", {}
+
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path, ttl_days=0), fetcher=not_modified)
+    assert seen and seen[0].get("If-None-Match") == '"v1"'
+    assert url not in rewrite_images(items[0]["summary"],
+                                     items[0]["img_map"], "html")
+
+
+def test_localize_refuses_unsafe_images(tmp_path):
+    cases = {
+        "https://x.example/a.png": (200, b"<html/>", {"content-type": "text/html"}),
+        "https://x.example/b.svg": (200, b"<svg/>", {"content-type": "image/svg+xml"}),
+        "https://x.example/c.png": (404, b"", {}),
+    }
+
+    def fetch(u, headers):
+        return cases[u]
+
+    summary = "".join(f'<img src="{u}">' for u in sorted(cases))
+    items = [{"summary": summary, "icon": ""}]
+    localize_images(items, img_config(tmp_path), fetcher=fetch)
+    assert not items[0].get("img_map")
+    for u in cases:  # originals are kept when caching fails
+        assert f'src="{u}"' in items[0]["summary"]
+
+
+def test_fetcher_refuses_private_hosts():
+    fetch = imagecache.make_urllib_fetcher(timeout=1)
+    for url in ("http://localhost/a.png", "http://192.168.4.1/a.png",
+                "ftp://example.org/a.png"):
+        with pytest.raises(ValueError):
+            fetch(url, {})

@@ -61,6 +61,32 @@ first argument to the script). Edit `config.yaml` to customize:
   `content`; the full text is used by default, and
   `prefer_summary: true` selects the short teaser instead.
 
+## Image caching
+
+Defining an `images` section makes the build download every image the
+feeds reference (post images and feed icons) into a local directory
+that is published together with the site, and rewrite the references
+to those copies.  Visitors then only ever load images from your own
+domain (no IP disclosure to feed hosts), posts keep their images even
+if the upstream ones vanish, and the cache persists between CI runs
+via the deployed `gh-pages` branch: entries younger than `ttl_days`
+are not touched at all, older ones are revalidated with a conditional
+request that transfers nothing when the image is unchanged.
+
+```yaml
+images:
+  dir: "images"   # cache = deploy output directory
+  ttl_days: 1     # skip revalidation for entries younger than this
+  # base_url: "https://example.com/planet/"  # default: site.site_url
+```
+
+Images are fetched with http(s)-only, public-host, timeout and size
+guards; responses must be of an `image/*` content type, and files are
+stored under hash-derived names so no URL can escape the cache
+directory.  SVG images are deliberately not cached (they could carry
+scripts when served same-origin), and any failure simply keeps the
+original remote URL, so image problems never break a build.
+
 ## Security notes
 
 Feed content is treated as untrusted input.  Feed-supplied HTML in

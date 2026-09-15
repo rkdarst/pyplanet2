@@ -24,12 +24,18 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - name: Restore image cache from gh-pages
+        run: |
+          git fetch --no-tags --depth=1 origin gh-pages \
+            && git checkout FETCH_HEAD -- images \
+            || echo "no image cache yet (first run?)"
       - run: python pyplanet2.py nordic-rse.yaml   # explicit config, live feeds
       - name: Stage site
         run: |
           mkdir -p site
           cp planet.html site/index.html           # site root page
           cp atom.xml site/atom.xml                # feed keeps its name
+          cp -r images site/images 2>/dev/null || true  # cached images + index
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:

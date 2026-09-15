@@ -21,6 +21,8 @@ import yaml
 from feedgenerator import Atom1Feed
 from jinja2 import Environment, FileSystemLoader
 
+from imagecache import localize_images, rewrite_images
+
 # Default configuration file
 DEFAULT_CONFIG_FILE = Path(__file__).parent / "config.yaml"
 
@@ -186,10 +188,13 @@ def generate_atom_feed(items, output_file, config):
     )
 
     for item in feed_items:
+        # readers cannot resolve relative paths, so images get the
+        # absolute ("atom") cached copies when the image cache is on
+        summary = rewrite_images(item["summary"], item.get("img_map"), "atom")
         feed.add_item(
             title=item["title"],
             link=item["link"],
-            description=item["summary"] or None,
+            description=summary or None,
             unique_id=item["link"],
             updateddate=item["dt"],
             author_name=item["feed_title"],
@@ -208,6 +213,9 @@ def generate_html_view(items, output_file, template_dir, config):
     # were already sanitized once at fetch time.
     for item in html_items:
         item["date"] = item["dt"].strftime("%Y-%m-%d %H:%M UTC")
+        if item.get("img_map"):
+            item["summary"] = rewrite_images(item["summary"],
+                                             item["img_map"], "html")
     
     # Setup Jinja2 environment (autoescape on; only bleach-sanitized
     # values are marked |safe in the template)
@@ -271,6 +279,10 @@ def main(argv=None):
     print("Fetching feeds...")
     items = fetch_all_items(config)
     print(f"Total items fetched: {len(items)}")
+
+    if config.get("images"):
+        print("Localizing feed images...")
+        localize_images(items, config)
 
     print("Generating Atom feed...")
     generate_atom_feed(items, config["output"]["atom_feed"], config)
