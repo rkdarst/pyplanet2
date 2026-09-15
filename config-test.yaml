@@ -26,6 +26,7 @@ feeds:
     name: "Atom test"
     author: "a"
     site: "example.org"
+    icon: "https://example.org/atom-icon.png"
 
   - url: "test-data/rss.xml"
     name: "RSS test"

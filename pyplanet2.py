@@ -98,6 +98,7 @@ def fetch_all_items(config):
         feed_title = feed_config.get("name", feed.feed.get("title", feed_url))
         author = feed_config.get("author", feed_title)
         site = feed_config.get("site", feed_url)
+        icon = feed_config.get("icon", "")
 
         for entry in feed.entries:
             title = entry.get("title", "(no title)")
@@ -112,6 +113,7 @@ def fetch_all_items(config):
                 "feed_title": feed_title,
                 "author": author,
                 "site": site,
+                "icon": icon,
                 "title": title,
                 "link": link,
                 "summary": summary,

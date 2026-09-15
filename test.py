@@ -100,7 +100,8 @@ def test_cli_end_to_end(tmp_path):
         },
         "limits": {"max_feed_items": 100, "html_view_limit": 10},
         "feeds": [
-            {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test"},
+            {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test",
+             "icon": "https://example.org/atom-icon.png"},
             {"url": str(REPO / "test-data" / "rss.xml"), "name": "RSS test",
              "resolve_urls": True},
         ],
@@ -116,6 +117,10 @@ def test_cli_end_to_end(tmp_path):
 
     html_text = (tmp_path / "planet.html").read_text(encoding="utf-8")
     assert "First item title" in html_text
+    # feed with an icon configured renders the image, the other the
+    # grey placeholder box
+    assert "https://example.org/atom-icon.png" in html_text
+    assert "icon-placeholder" in html_text
 
     atom_text = (tmp_path / "atom.xml").read_text(encoding="utf-8")
     ElementTree.fromstring(atom_text)  # raises if not valid XML

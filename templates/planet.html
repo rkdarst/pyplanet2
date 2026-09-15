@@ -18,6 +18,14 @@
     .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
     .post { padding: 1em 1.25em; margin-bottom: 1.25em;
             border: 1px solid #ddd; border-radius: 8px; }
+    .post-header { display: flex; align-items: center; gap: 0.75em;
+                   margin-bottom: 0.5em; }
+    /* Per-feed icon (feeds[].icon in the config); feeds without one
+       get a grey placeholder box.  Linked to the feed's site when set. */
+    .post-icon { width: 2.5em; height: 2.5em; border-radius: 50%;
+                 flex-shrink: 0; object-fit: cover; }
+    .icon-placeholder { background: #ddd; }
+    .post-icon-link { text-decoration: none; }
     .post-title { margin: 0 0 0.25em; }
     .post-link { color: #06c; text-decoration: none; }
     .post-meta { font-size: 0.85em; color: #666; }
@@ -72,12 +80,23 @@
 
     {% for item in posts %}
     <article class="post">
-      <h1 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h1>
-      <div class="post-meta">
-        <span class="feed-title">{{ item.feed_title }}</span>
-        <span class="post-date">{{ item.date }}</span>
-        {% if item.author %}<span class="post-author"> · Author: {{ item.author }}</span>{% endif %}
-        {% if item.site %}<span class="post-site"> · Site: <a href="{{ item.site }}">{{ item.site }}</a></span>{% endif %}
+      <div class="post-header">
+        {%- if item.site %}<a class="post-icon-link" href="{{ item.site }}">{% endif %}
+        {%- if item.icon %}
+        <img class="post-icon" src="{{ item.icon }}" alt="{{ item.feed_title }}">
+        {%- else %}
+        <div class="post-icon icon-placeholder"></div>
+        {%- endif %}
+        {%- if item.site %}</a>{% endif %}
+        <div>
+          <h1 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h1>
+          <div class="post-meta">
+            <span class="feed-title">{{ item.feed_title }}</span>
+            <span class="post-date">{{ item.date }}</span>
+            {% if item.author %}<span class="post-author"> · Author: {{ item.author }}</span>{% endif %}
+            {% if item.site %}<span class="post-site"> · Site: <a href="{{ item.site }}">{{ item.site }}</a></span>{% endif %}
+          </div>
+        </div>
       </div>
       {% if item.summary %}
       <div class="summary">{{ item.summary|safe }}</div>
