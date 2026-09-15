@@ -8,6 +8,7 @@ Configuration is loaded from a YAML file (config.yaml by default,
 or pass a path as the first argument).
 """
 import argparse
+import base64
 import re
 import sys
 from datetime import datetime, timezone
@@ -81,6 +82,38 @@ def make_urls_absolute(html_text, base_url):
     return REL_URL_ATTR_RE.sub(replace, html_text)
 
 
+def safe_link(url):
+    """Return url, or "#" when its scheme is unsafe.
+
+    Only post summaries pass through the bleach sanitizer, so links
+    taken straight from feeds are checked here instead: a malicious
+    feed could otherwise plant a clickable javascript: link, which the
+    templates' HTML escaping would happily preserve.
+    """
+    scheme = urlparse(url.strip()).scheme.lower()
+    return url if scheme in ("", "http", "https") else "#"
+
+
+def content_or_summary(entry):
+    """Prefer Atom <content> (full text) over <summary> (teaser).
+
+    feedparser mirrors content into summary only when the entry has no
+    summary of its own; when both exist, summary holds just the short
+    version, so the content blocks are checked first.  Both fields are
+    sanitized by feedparser's built-in HTML sanitizer.
+    """
+    for block in entry.get("content", []):
+        if block.get("value"):
+            return block["value"]
+        if block.get("base64"):
+            try:
+                return base64.b64decode(block["base64"]).decode(
+                    "utf-8", "replace")
+            except (TypeError, ValueError):
+                pass
+    return entry.get("summary", "")
+
+
 def fetch_all_items(config):
     """Fetch and parse all items from configured feeds."""
     items = []
@@ -92,6 +125,9 @@ def fetch_all_items(config):
         # against the feed URL (wrong for blogs with posts in
         # subdirectories).  Disabled by default.
         resolve_urls = feed_config.get("resolve_urls", False)
+        # prefer_summary: use the short Atom <summary> even when the
+        # entry also carries full <content> (default: full text wins).
+        prefer_summary = feed_config.get("prefer_summary", False)
         feed = feedparser.parse(feed_url, resolve_relative_uris=not resolve_urls)
         
         # Use configured name, or fall back to feed title or URL
@@ -102,8 +138,9 @@ def fetch_all_items(config):
 
         for entry in feed.entries:
             title = entry.get("title", "(no title)")
-            link = entry.get("link", "#")
-            summary = entry.get("summary", "")
+            link = safe_link(entry.get("link", "#"))
+            summary = (entry.get("summary", "") if prefer_summary
+                       else content_or_summary(entry))
             if resolve_urls:
                 summary = make_urls_absolute(summary, link)
             dt = parse_dt(entry)

@@ -57,6 +57,18 @@ first argument to the script). Edit `config.yaml` to customize:
   relative URLs are resolved against the *feed* URL, which breaks
   images on blogs that serve posts from subdirectories
   (e.g. `…/blog/2026/post/` referencing `../images/pic.png`).
+  Atom feeds often carry both a short `summary` and the full text as
+  `content`; the full text is used by default, and
+  `prefer_summary: true` selects the short teaser instead.
+
+## Security notes
+
+Feed content is treated as untrusted input.  Feed-supplied HTML in
+post summaries is sanitized (scripts, event handler attributes and
+`javascript:` URLs are stripped), and post links with any scheme other
+than http(s) are rendered inert (`#`).  As a side effect, `data:` URIs
+in feed images do not load.  The config file is trusted input: feed
+`url` entries may reference local files, intended for offline testing.
 
 ## Deployment
 

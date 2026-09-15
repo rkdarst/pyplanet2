@@ -12,7 +12,7 @@ from xml.etree import ElementTree
 import pytest
 import yaml
 
-from pyplanet2 import fetch_all_items, make_urls_absolute
+from pyplanet2 import fetch_all_items, make_urls_absolute, safe_link
 
 REPO = Path(__file__).parent
 
@@ -82,6 +82,37 @@ def test_resolve_urls_option(tmp_path):
     # for a local-file feed, so it stays relative or empty -- either way
     # it must not be the entry-based absolute URL)
     assert "http://example.org/images/pic.png" not in off[0]["summary"]
+
+
+def make_atom_config(**feed_opts):
+    """Config for fetch_all_items() over the Atom sample feed."""
+    feed = {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test"}
+    feed.update(feed_opts)
+    return {"feeds": [feed]}
+
+
+def test_content_preferred_over_summary(tmp_path):
+    """Full Atom <content> wins over the short <summary> by default."""
+    items = fetch_all_items(make_atom_config())
+    assert "CONTENT-MARKER" in items[0]["summary"]
+
+
+def test_prefer_summary_option(tmp_path):
+    """prefer_summary: true keeps the short teaser instead."""
+    items = fetch_all_items(make_atom_config(prefer_summary=True))
+    assert items[0]["summary"] == "Some text."
+
+
+@pytest.mark.parametrize("url, safe", [
+    ("https://example.org/post", True),
+    ("http://example.org/post", True),
+    ("#frag", True),
+    ("javascript:alert(1)", False),
+    ("data:text/html,<x>1</x>", False),
+])
+def test_safe_link(url, safe):
+    """Feed links with non-http(s) schemes are disabled."""
+    assert safe_link(url) == (url if safe else "#")
 
 
 def test_cli_end_to_end(tmp_path):

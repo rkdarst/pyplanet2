@@ -15,6 +15,7 @@
     <id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
     <updated>2003-12-13T18:30:02Z</updated>
     <summary>Some text.</summary>
+    <content type="html">&lt;p&gt;The full text. CONTENT-MARKER&lt;/p&gt;</content>
   </entry>
 
 </feed>
