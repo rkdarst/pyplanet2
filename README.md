@@ -9,6 +9,7 @@ Warning: this is generated content ("AI").  I partly did it as a test,
 but consider this before you try to modify this as a human.  So far,
 everything below this comment is automatically generated.  Consider
 asking me (a human) to fix it up before trying to extensively use this.
+Or ask me to ask the content generator to add things.
 
 
 ## Output files
