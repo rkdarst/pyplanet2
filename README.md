@@ -1,8 +1,15 @@
 # Planet blog aggregator
 
-This is a blog aggregator that takes a list of RSS/Atom feeds and
-makes a combined Atom feed. It also outputs a .html file of the last
-10 feeds, which can be used as a static-site preview.
+This is a blog aggregator that takes a list of RSS/Atom feeds
+(configured in yaml) and makes a combined Atom feed and HTML view.  When
+I looked in 2026, I couldn't find any easy to install planets, so I went
+with this.
+
+Warning: this is generated content ("AI").  I partly did it as a test,
+but consider this before you try to modify this as a human.  So far,
+everything below this comment is automatically generated.  Consider
+asking me (a human) to fix it up before trying to extensively use this.
+
 
 ## Output files
 
