@@ -1,0 +1,22 @@
+[build-system]
+requires = ["flit_core>=3.9"]
+build-backend = "flit_core.buildapi"
+
+# flit takes only the version and description (docstring) from
+# pyplanet2/__init__.py; everything else must be listed here.
+[project]
+name = "pyplanet2"
+requires-python = ">=3.10"
+dependencies = ["feedparser", "jinja2", "bleach", "pyyaml", "feedgenerator"]
+license = "CC0-1.0"          # SPDX id (you wrote "CC-0"; correct SPDX is CC0-1.0)
+authors = [{name = "Richard Darst", email = "tbd@example.invalid"}]
+dynamic = ["version", "description"]
+
+[project.urls]
+Homepage = "https://example.invalid/TBD"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+pyplanet2 = "pyplanet2.pyplanet2:main"

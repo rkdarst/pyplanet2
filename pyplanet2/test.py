@@ -4,6 +4,7 @@ Run from the repository root with:  pytest
 
 All tests are offline: they only read the sample feeds in test-data/.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,11 +13,11 @@ from xml.etree import ElementTree
 import pytest
 import yaml
 
-from pyplanet2 import fetch_all_items, make_urls_absolute, safe_link
-import imagecache
-from imagecache import localize_images, rewrite_images
+from pyplanet2.pyplanet2 import fetch_all_items, make_urls_absolute, safe_link
+from pyplanet2 import imagecache
+from pyplanet2.imagecache import localize_images, rewrite_images
 
-REPO = Path(__file__).parent
+REPO = Path(__file__).parent.parent  # tests live in pyplanet2/ of the checkout
 
 BASE = "https://blog.example.org/2026/09/post.html"
 
@@ -163,10 +164,12 @@ def test_cli_end_to_end(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
 
-    # cwd in tmp_path so the run cannot depend on the repo layout
+    # cwd in tmp_path so the run cannot depend on the repo layout;
+    # PYTHONPATH makes the in-repo package importable without install
+    env = {**os.environ, "PYTHONPATH": str(REPO)}
     subprocess.run(
-        [sys.executable, str(REPO / "pyplanet2.py"), str(config_file)],
-        cwd=tmp_path, check=True,
+        [sys.executable, "-m", "pyplanet2", str(config_file)],
+        cwd=tmp_path, check=True, env=env,
     )
 
     html_text = (tmp_path / "planet.html").read_text(encoding="utf-8")

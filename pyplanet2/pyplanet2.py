@@ -21,11 +21,7 @@ import yaml
 from feedgenerator import Atom1Feed
 from jinja2 import Environment, FileSystemLoader
 
-from imagecache import localize_images, rewrite_images
-
-# Default configuration file
-DEFAULT_CONFIG_FILE = Path(__file__).parent / "config.yaml"
-
+from .imagecache import localize_images, rewrite_images
 
 def load_config(path):
     """Load configuration from a YAML file."""
@@ -270,8 +266,7 @@ def main(argv=None):
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Blog aggregator: combines RSS feeds into an Atom feed and HTML view.")
-    parser.add_argument("config", nargs="?", default=str(DEFAULT_CONFIG_FILE),
-                        help="path to config file (default: config.yaml next to the script)")
+    parser.add_argument("config", help="path to config file (required)")
     args = parser.parse_args(argv)
 
     config = load_config(args.config)

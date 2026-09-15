@@ -23,13 +23,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
+      - run: pip install .
       - name: Restore image cache from gh-pages
         run: |
           git fetch --no-tags --depth=1 origin gh-pages \
             && git checkout FETCH_HEAD -- images \
             || echo "no image cache yet (first run?)"
-      - run: python pyplanet2.py nordic-rse.yaml   # explicit config, live feeds
+      - run: pyplanet2 nordic-rse.yaml   # installed console script, live feeds
       - name: Stage site
         run: |
           mkdir -p site

@@ -20,20 +20,22 @@ makes a combined Atom feed. It also outputs a .html file of the last
 
 ## Requirements
 
-- Python 3
-- feedparser
-- feedgenerator
-- jinja2
-- bleach
-- pyyaml
+- Python 3.10+
+- feedparser, feedgenerator, jinja2, bleach, pyyaml
+  (installed automatically with the package)
 
 ## Usage
 
+Install the package, then always pass a config file:
+
 ```bash
-python3 pyplanet2.py
-# or with a specific config file:
-python3 pyplanet2.py path/to/config.yaml
+pip install .
+pyplanet2 config.yaml
+# (also runnable without installing:  python -m pyplanet2 config.yaml)
 ```
+
+Relative output paths in the config resolve against the current
+directory, so run it from where the outputs should land.
 
 ## Configuration
 
