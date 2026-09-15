@@ -70,7 +70,7 @@
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-15T19:32:28+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-15T19:50:01+00:00</span> ·
       <a class="feed-link" href="https://example.com/planet/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
 
@@ -96,7 +96,7 @@
 <p>The main focus last week was migrating from version 1.1 of <a href="https://geotessera.org">Tessera</a> to the beta version 2 embeddings. In addition to the data layer changes, this also required a reworking of my inference code as <a href="https://github.com/ucam-eo/geotessera">the geotessera Python package's</a> API changed quite significantly (at least, based on how I was using it) as I migrated from the numpy storage system in v0.9 to the <a href="https://geozarr.org">zarr</a> based backend. The perils of innovating on multiple fronts!</p>
 <p>In the UK this seemed to not have a huge impact on my results, which is to be expected as I was relatively data rich in the UK: it would be interesting to see how I can scale back my data usage in the UK and still have good results perhaps, or as <a href="https://anil.recoil.org">Anil Madhavapeddy</a> suggested to use the lower resolution version of Tessera v2. Basically for Europe we can probably generate quite good habitat maps using much less compute and/or data than I'm currently doing.</p>
 <p>However, the flip side to that is that my very first run on Madagascar was mostly rubbish, due to a combined lack of occurrence data and <a href="https://openstreetmap.org">Open Street Map</a> data in that country. In the UK I found I got a reasonable map with just 50K occurrences going in, but Madagascar is over twice the size of the UK and has a much more varied set of habitats, and I only have around 5K occurrences, and those are very much clustered in popular points (mostly urban areas and forests), leaving a lot of the country under represented, and this clearly wrong in the final map. In small areas though it does a nice job, such as spotting these irrigation channels amongst the fields around <a href="https://en.wikipedia.org/wiki/Andapa">Andapa</a>.</p>
-<div><div><img alt="habitat map" src="https://digitalflapjack.com/weeknotes/2026-09-14/andapa_hab.png"><img alt="satellite view" src="https://digitalflapjack.com/weeknotes/2026-09-14/andapa_sat.png"><div></div><span>habitat map</span><span>satellite view</span></div></div>
+<div><div><img alt="habitat map" src="images/cece0f754a1ccd1c.png"><img alt="satellite view" src="images/888b2483b4111e0f.png"><div></div><span>habitat map</span><span>satellite view</span></div></div>
 <p>At the top level this is quite good, with the dark purple being arable and the light purple being urban. The greens are mostly subtropical moist forest with a smattering of subtropical montane forest, and then the blue is mostly wetlands, though technically this should be artificial drainage - though water is awkward in these maps without other data. But overall the matching is one of the few reasonably good bits we resolved, but that is one small bright star in an otherwise dark sky of incorrectness (yes, yes, I'm not a writer :).</p>
 <p>As with Brazil I'll review the data to see if there's any obvious pipeline deficiencies, particularly with respect to regional variances in how OSM data is structured (<a href="https://digitalflapjack.com/weeknotes/2026-08-31/">I wrote about this before for Brazil</a>), but ultimately I do think we just are data deficient for my approach in that region. In theory, that shouldn't matter, as Tessera is a global model, and pixels are comparable around the world, so if I have similar habitats in other countries that are more rich in occurrence data (perhaps in the southern parts of Africa, Indonesia, etc.) then that will work just as well. The challenge there is that the v2 embeddings for Tessera are not yet global, and so I'll need to see what I can do there. I still have confidence in the method I'm using, it's just how soon can I get the data to try and de-risk its applicability in areas like this.</p>
 <p>In the mean time if this is going to be blocked on more Tessera v2 coverage, then I might spend a bit of time shoring up my ideas around using Tessera to help suggest OSM edits.</p>
@@ -119,7 +119,7 @@
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/the-unaccountability-machine/">Book review: The Unaccountability Machine</a></h1>
           <div class="post-meta">
@@ -727,19 +727,19 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>Operating at level 1 is defensible, however, it'd be much more interesting to operate at level 2. Whilst the main inspirations for my own work comes from the <a href="https://conbio.onlinelibrary.wiley.com/doi/full/10.1111/cobi.13851">Lumbierres et al 2019 paper</a> which worked at level 1, the other habitat map paper that is of comparable note is the <a href="https://www.nature.com/articles/s41597-020-00599-8">Jung et al 2020 paper</a> which is generated at level 2, although is perhaps the more simplistic modelwise.</p>
 <p>Anyway, for fun I decided to try process the UK, where I know we have high levels of species occurrence data and OSM coverage, at level 2 and see what happened. At first glance, the map looked great: you could still see the same overall trends as the level 1 map, just now where we had &quot;forest&quot; before we had mostly &quot;forest temperate&quot;, what was &quot;shrubland&quot; was mostly &quot;shrubland temperate&quot; and so forth.</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/UKlevel2.png"></div></div></div><p></p>
+<img src="images/6baad59fafb7f6e9.png"></div></div></div><p></p>
 <p>But all was not quite what I expected, and so I dug in and was amused to discover that the problems were ones that were observable from where I live.</p>
 <h3>The Great Cormorant and its subtropical forests</h3>
 <p>The first oddity I noted in the new map was there was a small but non-zero amount of subtropical moist forest in the UK. Now, I know from discussions between my colleagues <a href="https://www.researchgate.net/profile/Vinicius-Tonetti">Vinicius Tonetti</a> and <a href="https://www.plantsci.cam.ac.uk/people/aneesh-naik">Aneesh Naik</a> that there is some small patches of rainforest in the UK, and indeed <a href="https://www.aneeshnaik.com/blogposts/20260619_weeknotes_2026_25.html">Aneesh had tried using Tessera to map them</a>, so I wondered if perhaps that's what was showing up. But when I plotted the locations of the pixels, it was clear that this wasn't what I found, I had a more general misclassification problem:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/notrainforest.png"></div></div></div><p></p>
+<img src="images/8cb35b2d2e27a22a.png"></div></div></div><p></p>
 <p>The root cause turned out to be a slightly silly gotcha of my own doing. I looked at which species in the UK would be seeding my map generation with subtropical moist forests, and it turns out that this was the main culprit, as taken on walk around West Kirby Marine Lake, not five minutes from my desk, a couple of months ago:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/IDG_20260524_075223_373.jpg"></div></div></div><p></p>
+<img src="images/260b795422d4e690.jpg"></div></div></div><p></p>
 <p>This is the <a href="https://www.iucnredlist.org/species/22696792/155523636">Great Cormorant</a>, a common bird around UK coastlines, and one we often see when out for a walk along the coast. If we look at the habitat preferences of the species as per the IUCN Red List data,  we can see that it mostly likes different types of wetland and marine habitats, which aligns with what I see when I go for a walk. But we also see it likes a single type of forest: subtropical moist forest. Now, as a computer scientist I'm not an expert on this, but I'm fairly sure that's not what it's finding in the UK.</p>
 <p>If we look at the range map for the Great Cormorant, that is to say the areas on the planet where a given species might exist according to the experts, we can see it's divided up into several different colours:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/range2.png"></div></div></div><p></p>
+<img src="images/578bd21fe71eab5c.png"></div></div></div><p></p>
 <p>Each colour is what's called a &quot;season&quot;: green, found along the coast, is resident (always present), the orange inland is non-breeding, and then the yellow up on the northern Scottish islands is breeding. You can kinda of think of resident as being an area where the species is present in both breeding and non-breeding seasons. This reflects the bird is migratory somewhat.</p>
 <p>Similarly, if we look at the habitat preferences of the Great Cormorant from the IUCN Red List, we can see that its preferences are also tied to season. And in particular, its preference for subtropical moist forests is only in the breeding season.</p>
 <p>The bug in my code was that when fetching species data from the IUCN Red List I was merging all the different seasons into one single range map and one habitat preference list, whereas the data is more subtle than that: certain habitats are only preferred in certain seasons. When I started this project I just copied my existing species data-fetching script from one of the application pipelines, where this subtlety wasn't important, but here it very much is. In my habitat map generation code we were seeing Great Cormorants in the UK in inland areas OSM marks as forest, and so we were noting that this area must be a forest the species likes, so adding all these occurrences of subtropical moist forest. However, if I actually treat the seasonality properly, then we know that the inland range of the Great Cormorant is only for its non-breeding season and it's not interested in forests then.</p>
@@ -748,17 +748,17 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <h3>The Marine Lake that wasn't</h3>
 <p>The other bug that showed up when looking into this one relates to where I was stood when I took the above photo. I was stood on the wall of the <a href="https://www.visitwirral.com/listing/west-kirby-marine-lake/17236101/">West Kirby Marine Lake</a>, which is an artificial lake used for boating and (if you're so inclined) swimming:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/lake.png"></div></div></div><p></p>
+<img src="images/3575bf02eec8f4d8.png"></div></div></div><p></p>
 <p>This is formed by an area of what I assume was beach that has been surrounded by a wall that is just below the highest tide level, which means it gets filled up with sea water periodically, and thus is a nice safe place for people to learn to sail etc.:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/IMG_1260.jpeg"></div></div></div><p></p>
+<img src="images/a9c34a3d42df2682.jpg"></div></div></div><p></p>
 <p>You can see the wall, which has a nice wide path on top of it for walking (it's about 2.5km around), in this photo of another bird we often see: the <a href="https://www.iucnredlist.org/species/62774969/154819214">Little Egret</a>:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/IDG_20251206_153550_236.jpg"></div></div></div><p></p>
+<img src="images/8e1d729df89d2be8.jpg"></div></div></div><p></p>
 <p>In particular, in that photo you can see the water level is almost overflowing, which indicates a recent high tide (or tide plus storm) was enough to top the lake up.</p>
 <p>You may be wondering what the point is. Well, when I looked at my level 2 habitat map I couldn't help but notice that the marine lake clearly stood out:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-09-07/freshwater.png"></div></div></div><p></p>
+<img src="images/06c5490c7d4d6ee6.png"></div></div></div><p></p>
 <p>The dark blue to the edges is &quot;Marine Neritic - Pelagic&quot;, which is basically the sea, then we the light blue as we come in land that is &quot;Marine intertidal - mud shoreline&quot;, and you can see the intertidal zone in the above photo clearly enough. But the reason the West Kirby Marine Lake stands out is because it has been predicted as &quot;Wetlands (inland) - Permanent freshwater lakes&quot;. There's several things wrong here, but the most important one for this discussion is the &quot;freshwater&quot; bit - I just spent ages telling you it's filled by the sea, so it is most assuredly not freshwater (though, as I've never been brave enough to swim in it, you might want to question my confidence here :).</p>
 <p>So why do we make it freshwater? Well, it's because Open Street Map listed it as such. Until <a href="https://www.openstreetmap.org/changeset/188509070">I corrected it</a>, the <a href="https://www.openstreetmap.org/way/155010529">West Kirby Marine Lake OSM entry</a> was in OSM as <code>natural=water, water=lake, salt=no</code>. Thus when I use OSM data to refine the list of habitat preferences for species occurrences in the lake I've restricted them to freshwater wetlands, forcing those pixels to that level 1 category. It's basically poor hygiene on the input data.</p>
 <p>Whilst I can fix this individual instance, it's similar to the issue I flagged last week in that just manual fixes like this don't scale. Ultimately it flags a broader problem I have which I don't deal with in my pipeline currently: incorrect input data. Both in terms of occurrences are perhaps mistagged as the wrong species, or the GPS coordinates are off slightly, or incorrect labels in OSM like this one. On the whole both GBIF and OSM are wonderful resources, but in any data set there will be some errors, and so the question is how to weed those out.</p>
@@ -767,7 +767,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <h2>Radical cartography</h2>
 <p>I picked up <a href="https://www.panmacmillan.com/authors/william-rankin/radical-cartography/9781509888801">this book</a> last year and finally got around to starting to read it:</p>
 <p></p><div><div><div>
-<img alt="A photo of a book called &quot;Radical Cartography&quot; by William Rankin" src="https://digitalflapjack.com/weeknotes/2026-09-07/IMG_2157.jpeg"></div></div></div><p></p>
+<img alt="A photo of a book called &quot;Radical Cartography&quot; by William Rankin" src="images/6d27c392c08b78d2.jpg"></div></div></div><p></p>
 <p>It feels particularly pertinent now that I'm building my own maps. As has been in the news this week with the <a href="https://news.un.org/en/story/2026/09/1168284">UN moving to promote people to use the Equal Earth Projection</a>, the lines we draw on maps are inherently political. In my line of work this is something I worry about a little, but probably not nearly enough. We make maps saying on some given metric where it is good or bad practice to do farming or logging or whatever, usually in the tropical countries where there is the most biodiversity to be impacted, but we do it from a place that is quite removed from that context. Historically it's generally been a bad thing when UK institutions try to dictate to the rest of the world how to run their affairs: that's a context in which our work needs to be considered. Hopefully the science we do is made open to question and scrutable so that people can pick it apart and see if what we claim holds up for themselves - this is one more reason that open science is so important. That hopefully enables it to be integrated with other information and insights we lack from not being of those places about which we attempt to derive results.</p>
 <p>This is why, in the habitat map work, I've been keen to seek out experts who have on the ground experience who can comment on the maps I produce and how well they reflect the ground based on their knowledge rather than a mix of my assumptions and what I can encode in Python scripts.</p>
 <p>I'm still early on in Radical Cartography, but already some of it has felt directly relevant:</p>
@@ -847,18 +847,18 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>Whilst on our way to Yorkshire we stopped off at Lancashire at the <a href="https://www.lancashire.gov.uk/museums/queen-street-mill-textile-museum/">Queen Street Mill</a>, a former cotton mill that still has a working steam engine connected to looms. I can highly recommend the guided tour they run, where we were shown the end-to-end process by which cotton was processed and turned into cloth, including a lot of working machines.</p>
 <p>What interested me is how much parallelism is in play in a factory like this, which makes me feel there is a good parallel programming guide somewhere in this factory. There's some simple, obvious parallelism, such as making the back beam, which is the width wise set of parallel threads that will be woven together to be cloth. These rolls were made on machines that literally showed the multithreading at play:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-31/IMG_2102.jpeg"></div></div></div><p></p>
+<img src="images/8605721c12466098.jpg"></div></div></div><p></p>
 <p>They also had even wider machines of the same kind when they needed to make wider cloth, showing some simple scaling in parallelism:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-31/IMG_2103.jpeg"></div></div></div><p></p>
+<img src="images/844fde217d1c469a.jpg"></div></div></div><p></p>
 <p>There was also some less obvious but still relevant stories of parallelism too. The cotton for the shuttle that passes through the parallel threads from the back beam is on a much smaller reel, as the shuttle needs to be small to be able to pass through the loom back and forth. But the supplied reels didn't necessarily match the size of whatever you were using, so the would need to be rewound for a given mill's set of looms. In this mill they actually unwound these small input reels into larger conical bobbins with enough material from dozens of these smaller reels, which was a slow process, but they did this because they had another machine that could then automatically unwind this larger bobbin onto many final shuttle reels without the need for human intervention, a sort of job queue system perhaps (which was also running in parallel):</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-31/IMG_2105.jpeg"></div></div></div><p></p>
+<img src="images/e93caf598d6fc00b.jpg"></div></div></div><p></p>
 <p>The point is that the raw inputs sometimes needed to go through many transforms, some of which appear slower than you'd want, but that is to enable some greater level of parallelism downstream. This is a common challenge in data-science, where the ideal path to throughput might not make sense at every single stage along the way.</p>
 <p>And so far this has been all to get one machine running: in the main hall of the factory originally would have sat 900 or so looms (there are now around 300 IIRC), and a single operator would be managing four or more looms, trying to keep them fed (instruction scheduling on a CPU with multiple units :). All 900 machines were driven by a single steam-engine that has shafts and gears and belts overhead.</p>
 <p>They also, for some of the fancier machines, had punch-card programming for the patterns:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-31/IMG_2111.jpeg"></div></div></div><p></p>
+<img src="images/08680be9a981a85e.jpg"></div></div></div><p></p>
 <p>Anyway, I highly recommend if you're around Burnley that you stop off and take the guided tour. They fire up the steam engine in full once a month, but if you miss that, like us, they have an electric motor drive a section of the factory so you can still get to see the machines in motion.</p>
 <h1>This week</h1>
 <ul>
@@ -903,7 +903,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <hr>
 <p>All this comes around from the fact that for the UK I just used a single year of observations and got reasonable results in my habitat map generation method (Black Cullins aside), but in Minas Gerais, even after opening up my data to plus or minus five years I still was generating poor maps. I think this is also driven by poor OSM data on the ground there. But I have noticed that the neighbouring state of <a href="https://en.wikipedia.org/wiki/Esp%C3%ADrito_Santo">Espírito Santo</a> does have much better coverage (Minas Gerais is the larger region here, and the smaller one Espírito Santo):</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-24/brazil.png"></div></div></div><p></p>
+<img src="images/bb04ff813719f2ee.png"></div></div></div><p></p>
 <p>My hope again is that if I can get better data in Espírito Santo then I can find enough points that are similar to Minas Gerais to help in the embedding space.</p>
 <p>It's also worth noting that this problem isn't unique to us: Lumbierres et al is similarly going to be impacted by this issue. However, as ever in this domain something is better than nothing, and understanding the limitations is just as important as the artifact itself.</p>
 <h2>Misc</h2>
@@ -942,7 +942,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>I've continued to push along on the habitat map work. The UK maps are reasonably well refined now, but the UK is the beginner level/easy mode for this sort of thing: the UK is incredibly data rich, and so I need to start looking at other parts of the world now to see if my method is going to work in other areas or be useless due to a lack of data. To be clear, I'm not finished in the UK, but I feel I've de-risked the UK part significantly, so now I want to de-risk it going global. Ultimately, whilst it's nice it's showing promise in the UK, for the applications where I want to apply this work the UK isn't that interesting.</p>
 <p>You can see the aforementioned data disparity if you look at this <a href="https://api.gbif.org/v2/map/demo1.html#map=3/-372941.42/640494.36/0">heat map of GBIF occurrences</a>:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-19/gbif.png"></div></div></div><p></p>
+<img src="images/bcc91fc56e47b77e.png"></div></div></div><p></p>
 <p>Similarly for <a href="https://openstreetmap.org">OpenStreetMap</a> data - as much as I adore OSM, you do see the availability of data fall of once you get outside populated areas. Even within Europe, when I was <a href="https://digitalflapjack.com/weeknotes/rendering%20156%20km%5E2%20of%20swedish%20forest%20in%20minecraft/">looking at the area around Kullberg, Sweden, to make a Minecraft map</a> I found none of the buildings in that area were in OSM and I had to instead use the national buildings database.</p>
 <p>As a concrete example of that data deficit and going back to GBIF, if I take occurrences of terrestrial vertebrate species in the UK I have around 80K points for 2024, but for Minas Gerais, one of the states of Brazil, which is 2.5 times the size of the UK, I have just 600 points for 2024.</p>
 <p>The other challenge with operating outside the UK is it's harder for me to personally eye-ball the results and know if they're comically bad or not. Thankfully I've had some people come forward that can help me: <a href="https://www.researchgate.net/profile/Vinicius-Tonetti">Vinicius Tonetti</a> has just joined the group I worked with on the LIFE metric, and he has experience with the Minas Gerais region (which is why I'm looking at it), and Anil connected me with <a href="https://www.bangor.ac.uk/research-students/sens/miranda-lam-715557/en">Miranda Lam</a> at Bangor University who is working with ground truths in Madagascar. I should say reconnected, as Miranda was working on the Tropical Moist Forest based project that I first started on when I joined the University.</p>
@@ -976,7 +976,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>I'm continuing to push forward mostly on the habitat mapping work, with occasional side quests into tooling bits I need to support that (changes to Yirgacheffe and Geotessera, more on that below). It's starting to take shape, in that the maps I'm making have some recognisable features, but I'm still at the phase where I'm learning about the data and having to question initial assumptions: the maps are in that awkward phase where they look good at first glance but are questionable when you dig in.</p>
 <p>For instance, here's a view on Anglesey, over on the north east of Wales:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-10/anglesey.png"></div></div></div><p></p>
+<img src="images/ebf52baee71da9b9.png"></div></div></div><p></p>
 <p>You can see a good mix of urban (light pink), arable land (dark pink), shrubland, and forest. It picks out the <a href="https://naturalresources.wales/days-out/places-to-visit/north-west-wales/newborough/">Newborough Forest</a> with it's tall pine trees, and even the race track on the island. However, it misclassifies <a href="https://en.wikipedia.org/wiki/Parys_Mountain">Mynydd Parys</a>, an old copper mine that you can explore, as urban rather than rocky - a common mistake if I look around mountain ranges otherwhere. Still, good progress since last week.</p>
 <p>Rather than talk about the map, I thought I'd share some of the process of how I'm building the pipeline to build the map. This is in part motivated by discussion in the <a href="https://nordic-rse.org">Nordic-RSE</a> Zulip, and in part as I've been trying something new, which has worked well for me so I want to record that. The context here is that I have an idea how we can improve on the habitat maps we use for the other pipelines I've worked on, and so I'm implementing this, aided by colleagues how have more experience on both general ecology and in building habitat maps for other domains. The focus is how can I quickly prove that this idea has legs or not, and now can I keep track of that, and keep my collaborators informed, both of whom are remote (including remote to each other).</p>
 <h3>The coding</h3>
@@ -995,7 +995,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>A technique that sounds perhaps excessive at first but has proven useful time and time again is to have each of the scripts generate a spreadsheet alongside whatever data artefact it would normally create - something I learned from <a href="https://www.researchgate.net/profile/Francesca-Ridley">Chess Ridley</a> when working with her to build my implementation of her STAR pipeline. In each spreadsheet will be both a set of summary statistics and a record of any filtering decisions. For example, in the STAR pipeline that Chess wrote she generated a spreadsheet that had a row every possible species that could be considered, and then a column for each filtering decision (is it extinct already, does it have any range data, etc.), so you could see how far a given species made it before it fell out. It's a lot of data, but when you have two runs of the pipeline and one isn't doing what you expect, you can immediatly review these spreadsheets to spot where the data differs before you start looking at the code, and it sped up debugging my implementation of Chess's STAR pipeline so much faster. Since then other projects I've worked on do this, and again the ecologists now ask for that spreadsheet before asking me about the code, which is a win for all involved.</p>
 <p>For this pipeline I've turned this telemetry up to eleven, not just doing it where I think it might be useful, but I make it a default for every script. This way I can readily compare the impact of any change we make to the pipeline, and I can do that at the point of the change, not just in the final aggregated result. Useful for when <a href="https://anil.recoil.org">Anil</a> asked me why adding marine species had helped with habitat classification in the Cairngorms: I have an audit that shows we added this many species, and more coastal species like rocky places, and so the rocks within the Cairngorms had more data to match. Even just seeing the overall impact of habitat changes from that change was easier to explain than looking at the final raster:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-10/graph.png"></div></div></div><p></p>
+<img src="images/20a76c06e0f28c20.png"></div></div></div><p></p>
 <p>The other benefit of this telemetry, which I'd not originally considered when I started this, is that because I used Claude Code to add code to generate them, it is aware they exist, and without prompting now when I use Claude Code to do a run of the pipeline after a change it will compare the spreadsheets between the runs and highlight significant changes in any trends.</p>
 <h3>Communicating progress</h3>
 <p>As I mentioned before, my colleagues on this project are remote, and whilst we have a chat channel we can use to discuss things, I wanted a way to ensure that every decision I make is recorded somewhere so they can keep on top of what I have and haven't done. I'm acutely aware I'm a computer scientist working on ecology things, and so there's lots I don't know: by making my process transparent I hope to head off getting too far down a wrong path.</p>
@@ -1045,7 +1045,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
 <p>It did cause me to look into the data, which was kinda of interesting. I got 1,009,424 occurrences from GBIF for 2024 in the UK for 182 species I was interested in. This fell just to 58,017 when I filtered for samples within the species range! Now, to be clear, I've not taken all of the range polygons for each species, as I've ignored those labelled as &quot;passage&quot; - but I need to try sense check this, as it feels odd.</p>
 <p>Of those 50K that remained, there's some super obvious biasing going on. If we look at the area around where I live:</p>
 <p></p><div><div><div>
-<img src="https://digitalflapjack.com/weeknotes/2026-08-03/annotated.png"></div></div></div><p></p>
+<img src="images/6efd1847a61236ef.png"></div></div></div><p></p>
 <p>There's clear clustering in the points that remain. If we look at the bits I've highlighted:</p>
 <ol>
 <li>This is <a href="https://www.rspb.org.uk/days-out/reserves/dee-estuary-burton-mere-wetlands">RSPB Burton Mere</a> - so somewhat obvious we get more sightings around nature reserves like this.</li>
@@ -1084,7 +1084,7 @@ I’m happy with the lessons I learned along the way.</strong></p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/chat-news-channels/">News channels in chat</a></h1>
           <div class="post-meta">
@@ -1336,7 +1336,7 @@ your field.</strong></p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/wiki-vs-code-rules/">“Code” vs “wiki” (vs “book”) rules for project contributions</a></h1>
           <div class="post-meta">
@@ -1477,7 +1477,7 @@ about it.</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/debian-with-unionfs-root/">Debian with unionfs root</a></h1>
           <div class="post-meta">
@@ -1585,7 +1585,7 @@ or for my case it was easiest to make it not use netfilter:</p>
       
       <div class="summary"><p>Last week we took our semi-regular trip to the <a href="https://en.wikipedia.org/wiki/Uffington_White_Horse">Uffington White Horse</a>, a 3000 year old horse carved into the chalk of a hillside somewhere between Swindon and Oxford. The horse is maintained by the <a href="https://www.nationaltrust.org.uk">National Trust</a>, and each year they get a series of volunteer groups to come and help with the maintenance; we attend as part of the <a href="https://longnowlondon.org">Long Now London</a> cohort.</p>
 <p></p><div><div><div>
-<img alt="A photo taken from the top of a hill showing several people with buckets and tools walking towards some chalk carvings in the hill side. In the distance you can see a flat expanse of farmland stretching to the horizon." src="https://digitalflapjack.com/weeknotes/monument-maintenance/IMG_1705.jpeg"></div></div></div><p></p>
+<img alt="A photo taken from the top of a hill showing several people with buckets and tools walking towards some chalk carvings in the hill side. In the distance you can see a flat expanse of farmland stretching to the horizon." src="images/a4902c262146f203.jpg"></div></div></div><p></p>
 <p>Perhaps it was the atypical heat getting to my brain, but whilst sat on the hill, trading in my keyboard for a trowel, I felt there were a good number of parallels to my time maintaining data-science pipelines, and possibly more broadly to software maintenance in general. This post is an attempt to collect those thoughts to see if they form any sort of cohesive comparison, or were just a sign I should have worn more sunscreen.</p>
 <h1>Constant maintenance required</h1>
 <p>Although we tend to think of geological features as being somewhat slow to change, the Uffington White Horse takes constant maintenance. Andy, the lead guide from the National Trust, was saying that it'd take only 5 to 10 years for the horse to vanish if it wasn't regularly maintained, which is a fate that has befallen many other such monuments. The type of maintenance varies year on year, as some tasks need to happen every year, such as the weeding, which is what I spent my time doing this year, versus laying on fresh chalk, which might happen every other year.</p>
@@ -1606,7 +1606,7 @@ or for my case it was easiest to make it not use netfilter:</p>
 <h1>Maintenance is active engagement with the work</h1>
 <p>Okay, so this year you're doing weeding. How hard can that be? You get a little tutorial on the trowel, and then look at where the horse should be chalk, and if you see a plant, remove it. Easy, right?</p>
 <p></p><div><div><div>
-<img alt="A photo of me kneeling next to a row of chalk in a grassy hillside. I&amp;apos;m using the end of the handle on a trowel to tamper down the chalk after removing a weed." src="https://digitalflapjack.com/weeknotes/monument-maintenance/me.jpeg"></div></div></div><p></p>
+<img alt="A photo of me kneeling next to a row of chalk in a grassy hillside. I&amp;apos;m using the end of the handle on a trowel to tamper down the chalk after removing a weed." src="images/11a34674b5aafe8a.jpg"></div></div></div><p></p>
 <p>But it's not that simple. Yes, the weeds in the middle of a patch are quite easy to spot, but when you get to the edges, it gets a bit more murky: where has the grass and weeds encroached on the horse, and where has the chalk encroached on the grass, washed over by rain water or animals? There isn't a right or wrong answer here, you, the maintainer, have to make a decision. I could go and ask one of the National Trust people for every inch of horse edge, but do they know what it looked like last year? And is that what it looked like 100 years ago or 3000 years ago?</p>
 <p>There is no perfect answer here: you, the maintainer, have to make that decision. Each weed you remove is an act of curation or design. You are choosing what is part of the horse and what isn't. Yes, if you get it wildly wrong one of the organisers might step in to stop you, but in general you are not just doing labour, you are part of the horse now, it is shaped by your decisions, as small as they might seem.</p>
 <p>It perhaps isn't surprising that in general, despite the above decision making, people maintaining the horse tend towards a conservative approach, trying to make the least change possible. Over time that has led to the horse being thinner than it used to be: the grasses push on aggressively enough that the boundary still presses in over time. In the last few years archaeologists have studied the area around the horse and found that there is evidence to support it being widened a little bit all around.</p>
@@ -1620,7 +1620,7 @@ or for my case it was easiest to make it not use netfilter:</p>
 <hr>
 <p>For me the weeding is actually quite satisfying: you start on a patch of horse that has weeds on it, and as you go along you clear it and then you can look back at the area you worked on and see it's now a nice clean patch.</p>
 <p></p><div><div><div>
-<img alt="A first person view photograph of weeding the horse: you can see my bucket, my knees on a foam pad, and a trowel in my hand." src="https://digitalflapjack.com/weeknotes/monument-maintenance/IMG_1711.jpeg"></div></div></div><p></p>
+<img alt="A first person view photograph of weeding the horse: you can see my bucket, my knees on a foam pad, and a trowel in my hand." src="images/7aacbc43a057f09a.jpg"></div></div></div><p></p>
 <p>In software, fixing little bugs can be quite the chore, but I feel that by having a good suite of unit tests you can get to that same level of satisfaction: it comes from knowing that your effort did a change: either you fixed some tests that were red and now they're green, perhaps your coverage metrics went up, or you added entirely new tests and the test count is hire than before. I think as a mental game tests can help make little chores like fixing tiny bugs have at least the satisfaction of looking back down at the ground and seeing you cleared an area.</p>
 <h1>Too much of a good thing: part 2</h1>
 <p>Another issue in balancing the needs of the volunteer community and the needs of the horse is that Andy has something of a &quot;success failure&quot; on his hands: too many people want to maintain the horse now. Word of mouth has spread by people like me who went and had a good time: you get to sit on a hill, feel like you've contributed to something beyond yourself that will outlive you, and you get to hang out with the kind of person who thinks it's a good idea to sit on a hill and feel like you've contributed to something beyond yourself that will outlive you. So perhaps you have too many people chalking now that leads to you having to remove chalk the next year.</p>
@@ -1637,7 +1637,7 @@ or for my case it was easiest to make it not use netfilter:</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/zulip-guide/">Zulipchat guide: managing too much information</a></h1>
           <div class="post-meta">
@@ -1901,7 +1901,7 @@ gives some underused features.e</p></li>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/digital-sovereignty-actions/">My digital sovereignty actions</a></h1>
           <div class="post-meta">
@@ -1984,7 +1984,7 @@ can even do basics without registering).</p>
 <h2>Home servers</h2>
 
 
-<img alt="https://rkd.zgib.net/_images/digital-sovereignty-actions-pis.png" src="https://rkd.zgib.net/_images/digital-sovereignty-actions-pis.png">
+<img alt="https://rkd.zgib.net/_images/digital-sovereignty-actions-pis.png" src="images/110ef91cd4eb9008.png">
 
 <p>I have two <a href="https://en.wikipedia.org/wiki/Raspberry_Pi">Raspberry Pis</a>
 running stock Raspberry Pi OS. (There are other Raspberry Pi images
@@ -2130,7 +2130,7 @@ risk when people try to self-host things.</p></li>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/vision-of-nordic-scientific-computing/">A vision of Nordic Scientific Computing</a></h1>
           <div class="post-meta">
@@ -2268,7 +2268,7 @@ to share this.)</p></li>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/hopes-for-new-it-compliance/">Hopes for new IT compliance</a></h1>
           <div class="post-meta">
@@ -2403,7 +2403,7 @@ towards them.</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/the-platform-compliance-pitfall/">The platform compliance pitfall</a></h1>
           <div class="post-meta">
@@ -2521,7 +2521,7 @@ platform effects in the future.</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/book-review-first-break-all-the-rules/">Book review: First, break all the rules</a></h1>
           <div class="post-meta">
@@ -2625,7 +2625,7 @@ I try anyway.</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/debian-read-only-root/">Notes on Debian with a read-only root</a></h1>
           <div class="post-meta">
@@ -2736,7 +2736,7 @@ containerd needed something mounted to be able to start.  In
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2026/it-department-manifesto/">Manifesto on university IT departments</a></h1>
           <div class="post-meta">
@@ -2825,7 +2825,7 @@ can do better.  In the current world, we have to do better.</p>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/2025/systemantics/">Book review: Systemantics</a></h1>
           <div class="post-meta">
@@ -2933,7 +2933,7 @@ cases, when the purposes are close enough.</p></li>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="https://rkd.zgib.net">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="images/6a0855db9256ea61.jpg" alt="RKD Blog"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="https://rkd.zgib.net/blog/rse-lessons-from-civil-engineering/">RSE lessons from Civil Engineering</a></h1>
           <div class="post-meta">
