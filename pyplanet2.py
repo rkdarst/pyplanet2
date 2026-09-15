@@ -88,9 +88,14 @@ def safe_link(url):
     Only post summaries pass through the bleach sanitizer, so links
     taken straight from feeds are checked here instead: a malicious
     feed could otherwise plant a clickable javascript: link, which the
-    templates' HTML escaping would happily preserve.
+    templates' HTML escaping would happily preserve.  NUL bytes are
+    dropped first because browsers remove them before resolving URLs
+    (XML itself cannot carry them, so this is defense-in-depth).
     """
-    scheme = urlparse(url.strip()).scheme.lower()
+    url = url.replace("\x00", "").strip()
+    if not url:
+        return "#"
+    scheme = urlparse(url).scheme.lower()
     return url if scheme in ("", "http", "https") else "#"
 
 
@@ -143,6 +148,10 @@ def fetch_all_items(config):
                        else content_or_summary(entry))
             if resolve_urls:
                 summary = make_urls_absolute(summary, link)
+            # Single sanitization point: feed-supplied HTML passes
+            # bleach exactly once, so the HTML view and the aggregated
+            # Atom feed always enforce one and the same policy.
+            summary = sanitize_html(summary)
             dt = parse_dt(entry)
 
             items.append({
@@ -195,12 +204,10 @@ def generate_html_view(items, output_file, template_dir, config):
     # Limit to html_view_limit for the HTML preview
     html_items = items[:config["limits"]["html_view_limit"]]
     
-    # Prepare items for template with formatted date and sanitized summary
+    # Prepare items for template with formatted dates; the summaries
+    # were already sanitized once at fetch time.
     for item in html_items:
         item["date"] = item["dt"].strftime("%Y-%m-%d %H:%M UTC")
-        # Sanitize the summary HTML using bleach
-        if item.get("summary"):
-            item["summary"] = sanitize_html(item["summary"])
     
     # Setup Jinja2 environment (autoescape on; only bleach-sanitized
     # values are marked |safe in the template)

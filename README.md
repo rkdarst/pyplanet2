@@ -64,8 +64,10 @@ first argument to the script). Edit `config.yaml` to customize:
 ## Security notes
 
 Feed content is treated as untrusted input.  Feed-supplied HTML in
-post summaries is sanitized (scripts, event handler attributes and
-`javascript:` URLs are stripped), and post links with any scheme other
+post summaries is sanitized once at fetch time -- scripts, event
+handler attributes, `javascript:` URLs and embeds such as `<iframe>`
+are stripped, and both the HTML view and the aggregated Atom feed
+enforce exactly the same policy.  Post links with any scheme other
 than http(s) are rendered inert (`#`).  As a side effect, `data:` URIs
 in feed images do not load.  The config file is trusted input: feed
 `url` entries may reference local files, intended for offline testing.

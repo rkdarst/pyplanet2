@@ -108,11 +108,32 @@ def test_prefer_summary_option(tmp_path):
     ("http://example.org/post", True),
     ("#frag", True),
     ("javascript:alert(1)", False),
+    ("java\x00script:alert(1)", False),
     ("data:text/html,<x>1</x>", False),
+    ("", False),
 ])
 def test_safe_link(url, safe):
     """Feed links with non-http(s) schemes are disabled."""
     assert safe_link(url) == (url if safe else "#")
+
+
+def test_summaries_sanitized_once_for_all_outputs(tmp_path):
+    """One sanitizer policy at fetch time covers both outputs: unsafe
+    markup such as iframes and forms never reaches any item."""
+    feed = tmp_path / "evil.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>t</title><link href="https://x.example/"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">'
+        '&lt;iframe src="https://evil.example/"&gt;&lt;/iframe&gt;'
+        '&lt;form&gt;&lt;button formaction="javascript:x"&gt;b&lt;/button&gt;&lt;/form&gt;'
+        'still-ok</content></entry></feed>',
+        encoding="utf-8")
+    items = fetch_all_items({"feeds": [{"url": str(feed)}]})
+    assert "<iframe" not in items[0]["summary"]
+    assert "<form" not in items[0]["summary"]
+    assert "still-ok" in items[0]["summary"]
 
 
 def test_cli_end_to_end(tmp_path):
