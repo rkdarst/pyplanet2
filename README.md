@@ -48,29 +48,60 @@ directory, so run it from where the outputs should land.
 ## Configuration
 
 Settings live in `config.yaml` (or the config file passed as the
-first argument to the script). Edit `config.yaml` to customize:
+first argument to the script).  A commented sample is below; the
+optional entries are commented out.  See [`config-test.yaml`](config-test.yaml)
+for a runnable config.
 
-- `site` - Site title and URLs (`title`, `site_url`, `atom_feed_url`,
-  and an optional `feed_guid` — a permanent feed id that overrides
-  the default of using `atom_feed_url`, useful if the feed URL moves)
-- `output` - Output filenames (`atom_feed`, `html_view`), an optional
-  `css` list of stylesheet paths/URLs inserted after the built-in
-  styling of the HTML view, and an optional `logo` image path/URL
-- `limits` - `max_feed_items` (default: 100) and `html_view_limit` (default: 10)
-- `feeds` - List of feeds to aggregate; each entry has a `url`
-  (local paths work for offline testing) and optional `name`,
-  `author`, `site`, and `icon` metadata.  The `icon` (a face/logo
-  image URL) renders beside each post, linked to `site` when set;
-  feeds without an icon get a grey placeholder box.  An unset
-  `author` is simply omitted from the post meta line. An entry may also set
-  `resolve_urls: true` to rewrite relative image/link URLs inside
-  that feed's items against each item's own link. By default
-  relative URLs are resolved against the *feed* URL, which breaks
-  images on blogs that serve posts from subdirectories
-  (e.g. `…/blog/2026/post/` referencing `../images/pic.png`).
-  Atom feeds often carry both a short `summary` and the full text as
-  `content`; the full text is used by default, and
-  `prefer_summary: true` selects the short teaser instead.
+```yaml
+# General site settings
+site:
+  title: "My Planet"                # Site title
+  site_url: "https://example.com/planet/"           # Home page of the site
+  atom_feed_url: "https://example.com/planet/atom.xml"  # Where the feed lives
+  # feed_guid: "urn:uuid:60a76c80-d399-11d9-b93c-000000000000"
+                                    # optional: a permanent id for the feed,
+                                    # defaults to atom_feed_url (useful if the
+                                    # URL might move)
+
+# Output file paths
+output:
+  atom_feed: "atom.xml"             # Atom feed output file
+  html_view: "planet.html"          # HTML view output file
+  # css: ["custom.css"]             # optional: extra stylesheets (paths or
+                                    # URLs) added after the built-in styling
+  # logo: "logo.png"                # optional: header image; its height is
+                                    # capped, never upscaled, width is free
+
+# Item limits
+limits:
+  max_feed_items: 100               # Maximum items in the aggregated Atom feed
+  html_view_limit: 10               # Number of posts shown on the HTML page
+
+# Feeds to aggregate
+feeds:
+  - url: "https://blog.example.org/feed.xml"  # required; a local path also
+                                    # works, for offline testing
+    # name: "Some Blog"             # optional display name; defaults to the
+                                    # feed's own title
+    # author: "Jane Doe"            # optional; shown in the post meta line,
+                                    # omitted from it when unset
+    # site: "https://blog.example.org"  # optional link for the name/icon;
+                                    # defaults to the feed url
+    # icon: "https://blog.example.org/favicon.ico"
+                                    # optional avatar beside each post; a grey
+                                    # placeholder box is shown if unset
+    # resolve_urls: true            # optional; resolve relative urls inside
+                                    # this feed's items against each item's own
+                                    # link instead of the feed url (default:
+                                    # false) — for blogs that serve posts from
+                                    # subdirectories
+    # prefer_summary: true          # optional; use the short summary instead
+                                    # of the full text when Atom feeds carry
+                                    # both (default: false)
+
+# An optional `images` section localizes referenced images; see the
+# "Image caching" section below for its keys.
+```
 
 ## Image caching
 
