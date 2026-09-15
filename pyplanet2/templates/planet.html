@@ -11,9 +11,11 @@
            color: #222; line-height: 1.5; }
     .site-header { display: flex; align-items: center; gap: 0.75em;
                    padding-bottom: 0.5em; border-bottom: 2px solid #444; }
-    .logo { height: 48px; flex-shrink: 0;
-            border-radius: 4px; }
-    .logo-placeholder { background: #ddd; }
+    /* Never upscaled: height is capped, width free, so a wide logo
+       keeps its shape and downscales only when too tall.  The
+       placeholder div has no intrinsic size, hence its own 48px. */
+    .logo { max-height: 3em; flex-shrink: 0; border-radius: 4px; }
+    .logo-placeholder { width: 48px; height: 48px; background: #ddd; }
     .site-title { margin: 0; font-size: 1.5em; }
     .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
     .post { padding: 1em 1.25em; margin-bottom: 1.25em;
@@ -71,7 +73,7 @@
     {% else %}
     <div class="logo logo-placeholder"></div>
     {% endif %}
-    <title class="site-title">{{ site_title }}</title>
+    <h1 class="site-title">{{ site_title }}</h1>
   </header>
 
   <main class="planet">
