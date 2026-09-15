@@ -40,7 +40,12 @@ first argument to the script). Edit `config.yaml` to customize:
 - `limits` - `max_feed_items` (default: 100) and `html_view_limit` (default: 10)
 - `feeds` - List of feeds to aggregate; each entry has a `url`
   (local paths work for offline testing) and optional `name`,
-  `author`, and `site` metadata
+  `author`, and `site` metadata. An entry may also set
+  `resolve_urls: true` to rewrite relative image/link URLs inside
+  that feed's items against each item's own link. By default
+  relative URLs are resolved against the *feed* URL, which breaks
+  images on blogs that serve posts from subdirectories
+  (e.g. `…/blog/2026/post/` referencing `../images/pic.png`).
 
 ## Deployment
 

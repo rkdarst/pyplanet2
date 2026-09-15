@@ -8,10 +8,9 @@ Configuration is loaded from a YAML file (config.yaml by default,
 or pass a path as the first argument).
 """
 import argparse
+import re
 import sys
 from datetime import datetime, timezone
-from html import escape as html_escape
-from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -48,13 +47,10 @@ def parse_dt(entry):
     return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-# Tag/attribute pairs whose values are single URLs to resolve against
-# the entry's own link (feedparser resolves against the *feed* URL by
-# default, which is wrong for per-post relative paths).
-RESOLVED_URL_ATTRS = {
-    ("a", "href"),
-    ("img", "src"),
-}
+# URL attribute values, as re-serialized by feedparser's HTML sanitizer
+# (attributes always come out double-quoted there; both quote styles are
+# matched defensively).
+REL_URL_ATTR_RE = re.compile(r"""\b(src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 
 
 def _resolve_url(url, base_url):
@@ -65,88 +61,24 @@ def _resolve_url(url, base_url):
     return urljoin(base_url, url)
 
 
-def _resolve_srcset(srcset, base_url):
-    """Resolve every candidate URL in a srcset attribute, keeping descriptors."""
-    resolved = []
-    for candidate in srcset.split(","):
-        tokens = candidate.split()
-        if not tokens:
-            continue
-        url = _resolve_url(tokens[0], base_url)
-        resolved.append(" ".join([url] + tokens[1:]))
-    return ", ".join(resolved)
-
-
-class _AbsoluteURLParser(HTMLParser):
-    """Re-emit HTML with relative URLs resolved against a base URL."""
-
-    def __init__(self, base_url):
-        # convert_charrefs=False so entities round-trip untouched
-        super().__init__(convert_charrefs=False)
-        self.base_url = base_url
-        self.parts = []
-
-    def result(self):
-        return "".join(self.parts)
-
-    def _serialize_attrs(self, tag, attrs):
-        out = []
-        for name, value in attrs:
-            lower = name.lower()
-            if value is not None:
-                if (tag, lower) in RESOLVED_URL_ATTRS:
-                    value = _resolve_url(value, self.base_url)
-                elif lower == "srcset" and tag in ("img", "source"):
-                    value = _resolve_srcset(value, self.base_url)
-                out.append(f' {name}="{html_escape(value, quote=True)}"')
-            else:
-                out.append(f" {name}")
-        return "".join(out)
-
-    def handle_starttag(self, tag, attrs):
-        self.parts.append(f"<{tag}{self._serialize_attrs(tag, attrs)}>")
-
-    def handle_startendtag(self, tag, attrs):
-        self.parts.append(f"<{tag}{self._serialize_attrs(tag, attrs)} />")
-
-    def handle_endtag(self, tag):
-        self.parts.append(f"</{tag}>")
-
-    def handle_data(self, data):
-        self.parts.append(html_escape(data, quote=False))
-
-    def handle_entityref(self, name):
-        self.parts.append(f"&{name};")
-
-    def handle_charref(self, name):
-        self.parts.append(f"&#{name};")
-
-    def handle_comment(self, data):
-        self.parts.append(f"<!--{data}-->")
-
-    def handle_decl(self, decl):
-        self.parts.append(f"<!{decl}>")
-
-    def unknown_decl(self, data):
-        self.parts.append(f"<![{data}]>")
-
-    def handle_pi(self, data):
-        self.parts.append(f"<?{data}>")
-
-
 def make_urls_absolute(html_text, base_url):
-    """Rewrite relative src/href/srcset URLs in HTML to absolute ones.
+    """Rewrite relative src/href URLs in feed HTML to absolute ones.
 
     URLs are resolved against base_url (the feed item's own link), so
-    content works identically once embedded in the aggregated page.
-    Absolute URLs, data: URIs, and plain #anchors are left untouched.
+    embedded images and links still work once shown on the aggregated
+    page.  Absolute URLs and plain #anchors are left untouched.
+    Enabled per feed via the resolve_urls config option.
     """
     if not html_text or not base_url or base_url == "#":
         return html_text
-    parser = _AbsoluteURLParser(base_url)
-    parser.feed(html_text)
-    parser.close()
-    return parser.result()
+
+    def replace(match):
+        quoted = match.group(2)
+        value = quoted if quoted is not None else match.group(3)
+        quote = '"' if quoted is not None else "'"
+        return f"{match.group(1)}={quote}{_resolve_url(value, base_url)}{quote}"
+
+    return REL_URL_ATTR_RE.sub(replace, html_text)
 
 
 def fetch_all_items(config):
@@ -155,12 +87,12 @@ def fetch_all_items(config):
 
     for feed_config in config["feeds"]:
         feed_url = feed_config["url"]
-        # Turn off feedparser's own HTML sanitizer and relative-URI
-        # resolver: we sanitize with bleach and resolve URLs against each
-        # entry's link instead (feedparser resolves against the feed URL,
-        # and its sanitizer strips srcset and other modern attributes).
-        feed = feedparser.parse(feed_url, sanitize_html=False,
-                                resolve_relative_uris=False)
+        # resolve_urls: rewrite relative URLs inside items against each
+        # item's own link, instead of feedparser's default of resolving
+        # against the feed URL (wrong for blogs with posts in
+        # subdirectories).  Disabled by default.
+        resolve_urls = feed_config.get("resolve_urls", False)
+        feed = feedparser.parse(feed_url, resolve_relative_uris=not resolve_urls)
         
         # Use configured name, or fall back to feed title or URL
         feed_title = feed_config.get("name", feed.feed.get("title", feed_url))
@@ -171,10 +103,8 @@ def fetch_all_items(config):
             title = entry.get("title", "(no title)")
             link = entry.get("link", "#")
             summary = entry.get("summary", "")
-            # Sanitize with bleach, then rewrite relative URLs (images,
-            # links) against the entry's own link so they still resolve
-            # when shown on the aggregated page
-            summary = make_urls_absolute(sanitize_html(summary), link)
+            if resolve_urls:
+                summary = make_urls_absolute(summary, link)
             dt = parse_dt(entry)
 
             items.append({
@@ -271,7 +201,7 @@ def sanitize_html(text):
     
     allowed_attributes = {
         'a': ['href', 'title', 'rel'],
-        'img': ['src', 'srcset', 'alt', 'title', 'width', 'height'],
+        'img': ['src', 'alt', 'title', 'width', 'height'],
     }
     
     return bleach.clean(

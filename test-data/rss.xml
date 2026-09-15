@@ -37,7 +37,7 @@ protocol="soap"/>
 <description>Watch out for
 &lt;span style="background: url(javascript:window.location=’http://example.org/’)"&gt;
 nasty tricks&lt;/span&gt;
-&lt;img src="../images/pic.png" srcset="pic-2x.png 2x, /shared/pic-4x.png 4x" alt="pic"&gt;
+&lt;img src="../images/pic.png" alt="pic"&gt;
 &lt;a href="../about.html"&gt;about&lt;/a&gt;
 </description>
 <author>mark@example.org</author>

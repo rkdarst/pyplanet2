@@ -31,3 +31,4 @@ feeds:
     name: "RSS test"
     author: "b"
     site: "example.org"
+    resolve_urls: true
