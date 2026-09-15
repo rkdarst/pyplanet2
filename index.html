@@ -11,9 +11,11 @@
            color: #222; line-height: 1.5; }
     .site-header { display: flex; align-items: center; gap: 0.75em;
                    padding-bottom: 0.5em; border-bottom: 2px solid #444; }
-    .logo { width: 48px; height: 48px; flex-shrink: 0;
-            border-radius: 4px; }
-    .logo-placeholder { background: #ddd; }
+    /* Never upscaled: height is capped, width free, so a wide logo
+       keeps its shape and downscales only when too tall.  The
+       placeholder div has no intrinsic size, hence its own 48px. */
+    .logo { max-height: 4.5em; flex-shrink: 0; border-radius: 4px; }
+    .logo-placeholder { width: 72px; height: 72px; background: #ddd; }
     .site-title { margin: 0; font-size: 1.5em; }
     .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
     .post { padding: 1em 1.25em; margin-bottom: 1.25em;
@@ -22,7 +24,7 @@
                    margin-bottom: 0.5em; }
     /* Per-feed icon (feeds[].icon in the config); feeds without one
        get a grey placeholder box.  Linked to the feed's site when set. */
-    .post-icon { width: 2.5em; height: 2.5em; border-radius: 50%;
+    .post-icon { width: 3.75em; height: 3.75em; border-radius: 50%;
                  flex-shrink: 0; object-fit: cover; }
     .icon-placeholder { background: #ddd; }
     .post-icon-link { text-decoration: none; }
@@ -66,11 +68,11 @@
     
     <div class="logo logo-placeholder"></div>
     
-    <title class="site-title">Planet</title>
+    <h1 class="site-title">Planet</h1>
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-15T20:30:44+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-15T21:03:20+00:00</span> ·
       <a class="feed-link" href="https://example.com/planet/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
 
