@@ -45,6 +45,11 @@ pyplanet2 config.yaml
 Relative output paths in the config resolve against the current
 directory, so run it from where the outputs should land.
 
+A local `feeds[].url` path that does not exist (or cannot be parsed)
+stops the build with an error; an unreachable remote feed is skipped
+with a `WARNING` instead.  In GitHub Actions runs both are also
+flagged as workflow annotations.
+
 ## Configuration
 
 Settings live in `config.yaml` (or the config file passed as the

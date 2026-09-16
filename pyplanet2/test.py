@@ -17,7 +17,7 @@ from pyplanet2.core import (TEMPLATE_DIR, fetch_all_items,
                                  generate_atom_feed, generate_html_view,
                                  make_urls_absolute, sanitize_html, safe_link,
                                 validate_config)
-from pyplanet2 import imagecache
+from pyplanet2 import core, imagecache
 from pyplanet2.imagecache import localize_images, rewrite_images
 
 REPO = Path(__file__).parent.parent  # tests live in pyplanet2/ of the checkout
@@ -240,6 +240,58 @@ def test_config_validation_reports_missing_keys(tmp_path, capsys):
         "limits": {"max_feed_items": 1, "html_view_limit": 1},
         "feeds": [{"url": "u"}],
     })
+
+
+def test_missing_local_feed_is_fatal(tmp_path, capsys):
+    """A configured local feed file that does not exist stops the build
+    with a clear message instead of silently contributing nothing."""
+    with pytest.raises(SystemExit):
+        fetch_all_items({"feeds": [{"url": str(tmp_path / "nope.xml")}]})
+    assert "local feed file not found" in capsys.readouterr().err
+
+
+def test_corrupt_local_feed_is_fatal(tmp_path, capsys):
+    corrupt = tmp_path / "bad.xml"
+    corrupt.write_text("hello, definitely not a feed")
+    with pytest.raises(SystemExit):
+        fetch_all_items({"feeds": [{"url": str(corrupt)}]})
+    assert "local feed unreadable" in capsys.readouterr().err
+
+
+def test_remote_feed_failure_warns_and_continues(tmp_path, monkeypatch, capsys):
+    """An unreachable remote feed is skipped with a warning (annotated
+    in Actions runs) while the other feeds still contribute."""
+    import feedparser as feedparser_mod
+
+    class Dead:
+        entries = []
+        bozo = True
+        bozo_exception = OSError("<urlopen error simulated offline>")
+
+    real_parse = feedparser_mod.parse
+
+    def fake_parse(url, **kwargs):
+        if str(url).startswith("http"):
+            return Dead()
+        return real_parse(url, **kwargs)
+
+    monkeypatch.setattr(core.feedparser, "parse", fake_parse)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    items = fetch_all_items({"feeds": [
+        {"url": "http://dead.example/feed.xml"},
+        {"url": str(REPO / "test-data" / "atom.xml")},
+    ]})
+    assert items, "the working local feed must still contribute"
+    out = capsys.readouterr().out
+    assert "WARNING: feed skipped" in out
+    assert "::warning title=pyplanet2::" in out
+
+
+def test_valid_empty_feed_is_silent(tmp_path, capsys):
+    empty = tmp_path / "empty.xml"
+    empty.write_text('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+    assert fetch_all_items({"feeds": [{"url": str(empty)}]}) == []
+    assert "WARNING" not in capsys.readouterr().out
 
 
 def test_cli_end_to_end(tmp_path):

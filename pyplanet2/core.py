@@ -10,6 +10,7 @@ or pass a path as the first argument).
 import argparse
 import base64
 import html
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -221,6 +222,39 @@ def content_or_summary(entry):
     return entry.get("summary", "")
 
 
+# URL schemes that address the local filesystem rather than the network.
+LOCAL_URL_SCHEMES = ("", "file")
+
+
+def _annotate(level, message):
+    """Also raise a GitHub Actions annotation inside Actions runs."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::{level} title=pyplanet2::{message}")
+
+
+def _feed_problem(feed_url, feed):
+    """None when the feed is usable; else ("fatal"|"skip", reason).
+
+    A missing local file and a corrupt one look identical to
+    feedparser (both are XML parse errors), so existence is checked
+    explicitly to name them apart.  A configured local feed that
+    cannot be read is a broken setup and fatal; an unreachable remote
+    feed merely skips, since a transient network problem should not
+    stop a build.  A valid but empty feed is fine and silent.
+    """
+    scheme = urlparse(feed_url).scheme.lower()
+    if scheme in LOCAL_URL_SCHEMES:
+        path = Path(urlparse(feed_url).path or feed_url)
+        if not path.exists():
+            return "fatal", f"local feed file not found: {path}"
+    if not feed.entries and feed.bozo:
+        reason = str(getattr(feed, "bozo_exception", "") or "unparsable feed")
+        if scheme in LOCAL_URL_SCHEMES:
+            return "fatal", f"local feed unreadable: {reason}"
+        return "skip", reason
+    return None
+
+
 def fetch_all_items(config):
     """Fetch and parse all items from configured feeds.
 
@@ -244,6 +278,18 @@ def fetch_all_items(config):
         prefer_summary = feed_config.get("prefer_summary", False)
         feed = feedparser.parse(feed_url, resolve_relative_uris=not resolve_urls)
         
+        problem = _feed_problem(feed_url, feed)
+        if problem:
+            kind, reason = problem
+            if kind == "fatal":
+                print(f"ERROR: {feed_url}: {reason}", file=sys.stderr)
+                _annotate("error", f"{feed_url}: {reason}")
+                sys.exit(1)
+            print(f"WARNING: feed skipped (continuing without it): "
+                  f"{feed_url} -- {reason}")
+            _annotate("warning", f"{feed_url}: {reason}")
+            continue
+
         # Use configured name, or fall back to feed title or URL
         feed_title = feed_config.get("name", feed.feed.get("title", feed_url))
         author = feed_config.get("author", "")
