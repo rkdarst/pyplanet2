@@ -13,7 +13,7 @@ import html
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -262,11 +262,19 @@ def fetch_all_items(config):
     localize_images() and the two generators below: "dt" (aware
     datetime), "feed_title", "author", "site", "icon" (plain strings,
     "" when unset), "title", "link" (scheme-checked by safe_link) and
-    "summary" (sanitized HTML).  localize_images() may add "img_map".
+    "summary" (sanitized HTML) and "feed_id" (index of the feed in
+    the config).  localize_images() may add "img_map".
     """
+    # Optional pool-wide age filter (0/unset = keep all ages); applies
+    # to every output.  Undated posts fall back to epoch and thus age
+    # out when this is set.
+    age_days = (config.get("limits") or {}).get("max_age_days", 0)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=age_days)
+              if age_days else None)
+
     items = []
 
-    for feed_config in config["feeds"]:
+    for feed_id, feed_config in enumerate(config["feeds"]):
         feed_url = feed_config["url"]
         # resolve_urls: rewrite relative URLs inside items against each
         # item's own link, instead of feedparser's default of resolving
@@ -308,9 +316,12 @@ def fetch_all_items(config):
             # Atom feed always enforce one and the same policy.
             summary = sanitize_html(summary)
             dt = parse_dt(entry)
+            if cutoff and dt < cutoff:
+                continue
 
             items.append({
                 "dt": dt,
+                "feed_id": feed_id,
                 "feed_title": feed_title,
                 "author": author,
                 "site": site,
@@ -359,18 +370,30 @@ def generate_atom_feed(items, output_file, config):
 
 def generate_html_view(items, output_file, template_dir, config):
     """Generate a static HTML view using Jinja2 template."""
-    # Limit to html_view_limit for the HTML preview.  Render contexts
-    # are copies: the shared item dicts stay untouched, so the formatted
-    # date and the html-mode image rewrite never leak into the Atom
-    # generator or a repeated run (generators are order-independent).
+    # Single pass over the (newest-first) pool: at most
+    # max_posts_per_feed posts per feed (0/unset = unlimited; newest
+    # win), stopping once html_view_limit posts are gathered.  Render
+    # contexts are copies: the shared item dicts stay untouched, so
+    # the formatted date and the html-mode image rewrite never leak
+    # into the Atom generator or a repeated run.
+    limit = config["limits"]["html_view_limit"]
+    per_feed = config["limits"].get("max_posts_per_feed", 0)
+    counts = {}
     html_items = []
-    for item in items[:config["limits"]["html_view_limit"]]:
+    for item in items:
+        if per_feed:
+            n = counts.get(item["feed_id"], 0)
+            if n >= per_feed:
+                continue
+            counts[item["feed_id"]] = n + 1
         rendered = dict(item)
         rendered["date"] = item["dt"].strftime("%Y-%m-%d %H:%M UTC")
         if item.get("img_map"):
             rendered["summary"] = rewrite_images(
                 item["summary"], item["img_map"], "html")
         html_items.append(rendered)
+        if len(html_items) >= limit:
+            break
 
     # Setup Jinja2 environment (autoescape on; only bleach-sanitized
     # values are marked |safe in the template)

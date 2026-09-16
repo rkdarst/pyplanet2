@@ -81,6 +81,10 @@ output:
 limits:
   max_feed_items: 100               # Maximum items in the aggregated Atom feed
   html_view_limit: 10               # Number of posts shown on the HTML page
+  # max_posts_per_feed: 5           # optional; HTML page only: cap posts per
+                                    # feed, newest win (0/unset = unlimited)
+  # max_age_days: 90                # optional: drop posts older than this
+                                    # from all outputs (0/unset = unlimited)
 
 # Feeds to aggregate
 feeds:

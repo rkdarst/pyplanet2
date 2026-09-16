@@ -294,6 +294,69 @@ def test_valid_empty_feed_is_silent(tmp_path, capsys):
     assert "WARNING" not in capsys.readouterr().out
 
 
+def test_max_posts_per_feed_caps_html_only(tmp_path):
+    """The HTML page shows at most max_posts_per_feed posts from one
+    feed (the newest ones); the Atom feed keeps everything."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    entries = "".join(
+        f'<entry><title>Big {i}</title>'
+        f'<link href="https://big.example/{i}"/><id>{i}</id>'
+        f'<updated>{(now - timedelta(days=i)).isoformat()}</updated></entry>'
+        for i in range(3))
+    big = tmp_path / "big.xml"
+    big.write_text('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+                   f'{entries}</feed>', encoding="utf-8")
+    config = {
+        "site": {"title": "T", "site_url": "https://p.example/",
+                 "atom_feed_url": "https://p.example/atom.xml"},
+        "output": {"atom_feed": str(tmp_path / "atom.xml"),
+                   "html_view": str(tmp_path / "page.html")},
+        "limits": {"max_feed_items": 100, "html_view_limit": 50,
+                   "max_posts_per_feed": 1},
+        "feeds": [{"url": str(big)},
+                  {"url": str(REPO / "test-data" / "atom.xml")}],
+    }
+    items = fetch_all_items(config)
+    assert len(items) == 4
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    feed = Path(config["output"]["atom_feed"]).read_text(encoding="utf-8")
+    assert "Big 0" in page and "Big 1" not in page and "Big 2" not in page
+    assert page.count("Atom-Powered Robots") == 1
+    # each of the 3 entries appears in <link> and <id>: uncapped Atom feed
+    assert feed.count("big.example") == 6
+    assert "Atom-Powered Robots" in feed
+
+
+def test_max_age_days_drops_old_posts_everywhere(tmp_path):
+    """max_age_days trims the shared pool: too-old posts vanish from
+    both outputs, while unset/0 keeps every age."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    feed = tmp_path / "mixed.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        f'<entry><title>Fresh</title><link href="https://x/1"/><id>1</id>'
+        f'<updated>{(now - timedelta(days=1)).isoformat()}</updated></entry>'
+        f'<entry><title>Ancient</title><link href="https://x/2"/><id>2</id>'
+        f'<updated>{(now - timedelta(days=365)).isoformat()}</updated></entry>'
+        '</feed>', encoding="utf-8")
+    base = {
+        "site": {"title": "T", "site_url": "https://p.example/",
+                 "atom_feed_url": "https://p.example/atom.xml"},
+        "output": {"atom_feed": str(tmp_path / "atom.xml"),
+                   "html_view": str(tmp_path / "page.html")},
+        "feeds": [{"url": str(feed)}],
+    }
+    old = dict(base, limits={"max_feed_items": 100, "html_view_limit": 50,
+                             "max_age_days": 30})
+    assert [i["title"] for i in fetch_all_items(old)] == ["Fresh"]
+    unlimited = dict(base, limits={"max_feed_items": 100, "html_view_limit": 50})
+    assert len(fetch_all_items(unlimited)) == 2
+
+
 def test_cli_end_to_end(tmp_path):
     """Full command-line run over the local test feeds."""
     config = {
