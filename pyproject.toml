@@ -19,4 +19,4 @@ Homepage = "https://example.invalid/TBD"
 test = ["pytest"]
 
 [project.scripts]
-pyplanet2 = "pyplanet2.pyplanet2:main"
+pyplanet2 = "pyplanet2.core:main"

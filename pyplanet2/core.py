@@ -37,6 +37,41 @@ def load_config(path):
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
+# Keys every config must carry; dotted paths mirror how they are read.
+REQUIRED_KEYS = (
+    "site.title", "site.site_url", "site.atom_feed_url",
+    "output.atom_feed", "output.html_view",
+    "limits.max_feed_items", "limits.html_view_limit",
+    "feeds",
+)
+
+
+def validate_config(config):
+    """Exit with one clear message listing every missing required key.
+
+    Without this, a config typo surfaces as a bare KeyError deep inside
+    a generator; the README sample config documents the full shape.
+    """
+    missing = []
+    for dotted in REQUIRED_KEYS:
+        node = config
+        for part in dotted.split("."):
+            if not isinstance(node, dict) or part not in node:
+                missing.append(dotted)
+                break
+            node = node[part]
+    if isinstance(config.get("feeds"), list):
+        for i, feed in enumerate(config["feeds"]):
+            if not isinstance(feed, dict) or "url" not in feed:
+                missing.append(f"feeds[{i}].url")
+    if missing:
+        print("ERROR: config is missing required key(s): "
+              + ", ".join(missing), file=sys.stderr)
+        print("See the README sample config for the full shape.",
+              file=sys.stderr)
+        sys.exit(1)
+    return config
+
 
 def parse_dt(entry):
     """Parse publication or update date from feed entry."""
@@ -134,6 +169,38 @@ def safe_link(url):
     return url if url and _url_is_safe(url) else "#"
 
 
+ALLOWED_TAGS = [
+    'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'small',
+    'a', 'ul', 'ol', 'li',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'pre', 'code', 'img',
+    'div', 'span', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+]
+
+ALLOWED_ATTRIBUTES = {
+    'a': ['href', 'title', 'rel'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
+}
+
+# bleach.clean() has no filters hook, so one Cleaner carries the
+# url_scheme_filter bolted in after bleach's own sanitizer.
+_CLEANER = bleach.Cleaner(
+    tags=ALLOWED_TAGS,
+    attributes=ALLOWED_ATTRIBUTES,
+    strip=True,
+    filters=[url_scheme_filter],
+)
+
+
+def sanitize_html(text):
+    """Sanitize feed-supplied HTML: tag/attribute allow-lists plus
+    the url_scheme_filter scheme allow-list, applied once so every
+    output enforces exactly the same policy."""
+    if not text:
+        return ""
+    return _CLEANER.clean(text)
+
+
 def content_or_summary(entry):
     """Prefer Atom <content> (full text) over <summary> (teaser).
 
@@ -155,7 +222,14 @@ def content_or_summary(entry):
 
 
 def fetch_all_items(config):
-    """Fetch and parse all items from configured feeds."""
+    """Fetch and parse all items from configured feeds.
+
+    The item dicts are the internal contract between this function,
+    localize_images() and the two generators below: "dt" (aware
+    datetime), "feed_title", "author", "site", "icon" (plain strings,
+    "" when unset), "title", "link" (scheme-checked by safe_link) and
+    "summary" (sanitized HTML).  localize_images() may add "img_map".
+    """
     items = []
 
     for feed_config in config["feeds"]:
@@ -239,23 +313,24 @@ def generate_atom_feed(items, output_file, config):
 
 def generate_html_view(items, output_file, template_dir, config):
     """Generate a static HTML view using Jinja2 template."""
-    # Limit to html_view_limit for the HTML preview
-    html_items = items[:config["limits"]["html_view_limit"]]
-    
-    # Prepare items for template with formatted dates; the summaries
-    # were already sanitized once at fetch time.
-    for item in html_items:
-        item["date"] = item["dt"].strftime("%Y-%m-%d %H:%M UTC")
+    # Limit to html_view_limit for the HTML preview.  Render contexts
+    # are copies: the shared item dicts stay untouched, so the formatted
+    # date and the html-mode image rewrite never leak into the Atom
+    # generator or a repeated run (generators are order-independent).
+    html_items = []
+    for item in items[:config["limits"]["html_view_limit"]]:
+        rendered = dict(item)
+        rendered["date"] = item["dt"].strftime("%Y-%m-%d %H:%M UTC")
         if item.get("img_map"):
-            item["summary"] = rewrite_images(item["summary"],
-                                             item["img_map"], "html")
-    
+            rendered["summary"] = rewrite_images(
+                item["summary"], item["img_map"], "html")
+        html_items.append(rendered)
+
     # Setup Jinja2 environment (autoescape on; only bleach-sanitized
     # values are marked |safe in the template)
     env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
     template = env.get_template("planet.html")
-    
-    # Render template
+
     html_content = template.render(
         posts=html_items,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -264,41 +339,9 @@ def generate_html_view(items, output_file, template_dir, config):
         logo=config["output"].get("logo", ""),
         atom_feed_url=config["site"]["atom_feed_url"]
     )
-    
+
     Path(output_file).write_text(html_content, encoding="utf-8")
     print(f"Generated HTML view: {output_file} ({len(html_items)} items)")
-
-
-ALLOWED_TAGS = [
-    'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'small',
-    'a', 'ul', 'ol', 'li',
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'blockquote', 'pre', 'code', 'img',
-    'div', 'span', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-]
-
-ALLOWED_ATTRIBUTES = {
-    'a': ['href', 'title', 'rel'],
-    'img': ['src', 'alt', 'title', 'width', 'height'],
-}
-
-# bleach.clean() has no filters hook, so one Cleaner carries the
-# url_scheme_filter bolted in after bleach's own sanitizer.
-_CLEANER = bleach.Cleaner(
-    tags=ALLOWED_TAGS,
-    attributes=ALLOWED_ATTRIBUTES,
-    strip=True,
-    filters=[url_scheme_filter],
-)
-
-
-def sanitize_html(text):
-    """Sanitize feed-supplied HTML: tag/attribute allow-lists plus
-    the url_scheme_filter scheme allow-list, applied once so every
-    output enforces exactly the same policy."""
-    if not text:
-        return ""
-    return _CLEANER.clean(text)
 
 
 def main(argv=None):
@@ -308,7 +351,7 @@ def main(argv=None):
     parser.add_argument("config", help="path to config file (required)")
     args = parser.parse_args(argv)
 
-    config = load_config(args.config)
+    config = validate_config(load_config(args.config))
 
     print("Fetching feeds...")
     items = fetch_all_items(config)

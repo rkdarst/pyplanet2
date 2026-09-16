@@ -13,9 +13,10 @@ from xml.etree import ElementTree
 import pytest
 import yaml
 
-from pyplanet2.pyplanet2 import (TEMPLATE_DIR, fetch_all_items,
+from pyplanet2.core import (TEMPLATE_DIR, fetch_all_items,
                                  generate_atom_feed, generate_html_view,
-                                 make_urls_absolute, sanitize_html, safe_link)
+                                 make_urls_absolute, sanitize_html, safe_link,
+                                validate_config)
 from pyplanet2 import imagecache
 from pyplanet2.imagecache import localize_images, rewrite_images
 
@@ -222,6 +223,23 @@ def test_feed_urls_never_executable_in_outputs(tmp_path):
         text = html_lib.unescape(Path(out).read_text(encoding="utf-8"))
         flat = text.translate(str.maketrans("", "", "\\t\\n\\r"))
         assert not pattern.search(flat), out
+
+
+def test_config_validation_reports_missing_keys(tmp_path, capsys):
+    """A config with missing required keys fails with one clear message
+    instead of a bare KeyError from deep inside a generator."""
+    with pytest.raises(SystemExit):
+        validate_config({"site": {"title": "x"}})
+    err = capsys.readouterr().err
+    assert "site.site_url" in err and "feeds" in err
+    assert "config is missing required key(s)" in err
+    # the sample shape from the README passes untouched
+    validate_config({
+        "site": {"title": "t", "site_url": "u", "atom_feed_url": "a"},
+        "output": {"atom_feed": "x", "html_view": "h"},
+        "limits": {"max_feed_items": 1, "html_view_limit": 1},
+        "feeds": [{"url": "u"}],
+    })
 
 
 def test_cli_end_to_end(tmp_path):
