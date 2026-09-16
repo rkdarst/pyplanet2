@@ -9,6 +9,7 @@ or pass a path as the first argument).
 """
 import argparse
 import base64
+import html
 import re
 import sys
 from datetime import datetime, timezone
@@ -80,21 +81,57 @@ def make_urls_absolute(html_text, base_url):
     return REL_URL_ATTR_RE.sub(replace, html_text)
 
 
+# URL schemes allowed in feed-supplied href/src attributes and in entry
+# links.  The empty scheme covers relative URLs and #fragments; mailto
+# preserves bleach's long-standing default.
+SAFE_URL_SCHEMES = ("", "http", "https", "mailto")
+
+
+def _browser_url(url):
+    """Return url as browsers will parse it: they drop NUL bytes and
+    tab/newline/CR characters from URLs before resolving them (and
+    trim surrounding space), so a scheme check must look at exactly
+    this form.  XML cannot carry NUL bytes, making that part
+    defense-in-depth."""
+    url = html.unescape(str(url))  # attribute entities arrive raw here
+    for ch in (chr(0), chr(9), chr(10), chr(13)):
+        url = url.replace(ch, "")
+    return url.strip()
+
+
+def _url_is_safe(url):
+    """True when the browser-parsed url has a SAFE_URL_SCHEMES scheme."""
+    return urlparse(_browser_url(url)).scheme.lower() in SAFE_URL_SCHEMES
+
+
+def url_scheme_filter(source):
+    """bleach/html5lib token filter dropping href/src attributes whose
+    scheme is not allowed.
+
+    bleach's built-in protocol check only strips URLs its parser
+    succeeds in parsing; malformed shapes such as "java[tab]script:2"
+    or "javascript:1" survive it fail-open, so the allow-list is
+    enforced here over every attribute that reaches the output.
+    """
+    for token in source:
+        if token["type"] in ("StartTag", "EmptyTag"):
+            for key, value in list(token["data"].items()):
+                if key[1] in ("href", "src") and not _url_is_safe(value):
+                    del token["data"][key]
+        yield token
+
+
 def safe_link(url):
     """Return url, or "#" when its scheme is unsafe.
 
-    Only post summaries pass through the bleach sanitizer, so links
-    taken straight from feeds are checked here instead: a malicious
-    feed could otherwise plant a clickable javascript: link, which the
-    templates' HTML escaping would happily preserve.  NUL bytes are
-    dropped first because browsers remove them before resolving URLs
-    (XML itself cannot carry them, so this is defense-in-depth).
+    Only post summaries pass through the sanitizer and its
+    url_scheme_filter, so links taken straight from feeds are checked
+    here against the same policy: a malicious feed could otherwise
+    plant a clickable javascript: link, which the templates' HTML
+    escaping would happily preserve.
     """
-    url = url.replace("\x00", "").strip()
-    if not url:
-        return "#"
-    scheme = urlparse(url).scheme.lower()
-    return url if scheme in ("", "http", "https") else "#"
+    url = _browser_url(url)
+    return url if url and _url_is_safe(url) else "#"
 
 
 def content_or_summary(entry):
@@ -232,34 +269,36 @@ def generate_html_view(items, output_file, template_dir, config):
     print(f"Generated HTML view: {output_file} ({len(html_items)} items)")
 
 
+ALLOWED_TAGS = [
+    'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'small',
+    'a', 'ul', 'ol', 'li',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'pre', 'code', 'img',
+    'div', 'span', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+]
+
+ALLOWED_ATTRIBUTES = {
+    'a': ['href', 'title', 'rel'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
+}
+
+# bleach.clean() has no filters hook, so one Cleaner carries the
+# url_scheme_filter bolted in after bleach's own sanitizer.
+_CLEANER = bleach.Cleaner(
+    tags=ALLOWED_TAGS,
+    attributes=ALLOWED_ATTRIBUTES,
+    strip=True,
+    filters=[url_scheme_filter],
+)
+
+
 def sanitize_html(text):
-    """
-    Sanitize HTML content using bleach.
-    Allows only safe HTML tags while removing potentially dangerous ones.
-    """
+    """Sanitize feed-supplied HTML: tag/attribute allow-lists plus
+    the url_scheme_filter scheme allow-list, applied once so every
+    output enforces exactly the same policy."""
     if not text:
         return ""
-    
-    # Define allowed tags and attributes
-    allowed_tags = [
-        'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'small',
-        'a', 'ul', 'ol', 'li',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'blockquote', 'pre', 'code', 'img',
-        'div', 'span', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'
-    ]
-    
-    allowed_attributes = {
-        'a': ['href', 'title', 'rel'],
-        'img': ['src', 'alt', 'title', 'width', 'height'],
-    }
-    
-    return bleach.clean(
-        text,
-        tags=allowed_tags,
-        attributes=allowed_attributes,
-        strip=True
-    )
+    return _CLEANER.clean(text)
 
 
 def main(argv=None):

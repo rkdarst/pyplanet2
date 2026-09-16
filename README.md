@@ -129,21 +129,31 @@ directory.  SVG images are deliberately not cached (they could carry
 scripts when served same-origin), and any failure simply keeps the
 original remote URL, so image problems never break a build.
 
+The SSRF guard blocks non-http(s) schemes and literal private or
+loopback addresses and re-checks every redirect hop, but hostnames
+are not resolved before connecting: a DNS name pointing at a local
+address would therefore still be fetched at build time.  Only the
+build machine is exposed that way -- visitors never are, since they
+only ever load the cached copies.
+
 ## Security notes
 
 Feed content is treated as untrusted input.  Feed-supplied HTML in
 post summaries is sanitized once at fetch time -- scripts, event
-handler attributes, `javascript:` URLs and embeds such as `<iframe>`
-are stripped, and both the HTML view and the aggregated Atom feed
-enforce exactly the same policy.  Post links with any scheme other
-than http(s) are rendered inert (`#`).  As a side effect, `data:` URIs
+handler attributes and embeds such as `<iframe>` are stripped, and
+both the HTML view and the aggregated Atom feed enforce exactly the
+same policy.  Every `href`/`src` in summaries and every post link is
+additionally checked against a scheme allow-list (http, https,
+relative URLs, mailto) using browser-equivalent URL cleaning, so
+malformed shapes like `java`+tab+`script:` cannot slip through;
+links with any other scheme are rendered inert (`#` or dropped).  As a side effect, `data:` URIs
 in feed images do not load.  The config file is trusted input: feed
 `url` entries may reference local files, intended for offline testing.
 
 ## Deployment
 
 A GitHub Actions workflow (`.github/workflows/build.yml`) rebuilds
-the planet on every push to `master` and once a day on a schedule,
+the planet on every push to `master` and on manual dispatch,
 then deploys `planet.html` (as `index.html`) and `atom.xml` to
 GitHub Pages via `peaceiris/actions-gh-pages`.
 

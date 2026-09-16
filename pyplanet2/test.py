@@ -13,7 +13,9 @@ from xml.etree import ElementTree
 import pytest
 import yaml
 
-from pyplanet2.pyplanet2 import fetch_all_items, make_urls_absolute, safe_link
+from pyplanet2.pyplanet2 import (TEMPLATE_DIR, fetch_all_items,
+                                 generate_atom_feed, generate_html_view,
+                                 make_urls_absolute, sanitize_html, safe_link)
 from pyplanet2 import imagecache
 from pyplanet2.imagecache import localize_images, rewrite_images
 
@@ -120,13 +122,17 @@ def test_prefer_summary_option(tmp_path):
     ("https://example.org/post", True),
     ("http://example.org/post", True),
     ("#frag", True),
+    ("mailto:a@b.example", True),
+    ("javascript:1", False),
     ("javascript:alert(1)", False),
+    ("java\tscript:2", False),
+    (" javascript:1", False),
     ("java\x00script:alert(1)", False),
     ("data:text/html,<x>1</x>", False),
     ("", False),
 ])
 def test_safe_link(url, safe):
-    """Feed links with non-http(s) schemes are disabled."""
+    """Feed links pass only with http(s), mailto, or as relative URLs."""
     assert safe_link(url) == (url if safe else "#")
 
 
@@ -147,6 +153,75 @@ def test_summaries_sanitized_once_for_all_outputs(tmp_path):
     assert "<iframe" not in items[0]["summary"]
     assert "<form" not in items[0]["summary"]
     assert "still-ok" in items[0]["summary"]
+
+
+@pytest.mark.parametrize("shape", [
+    "javascript:1",
+    "javascript:alert(1)",
+    "java\tscript:2",
+    " javascript:1",
+    "jAvAsCrIpT:1",
+    "java&#9;script:2",
+    "JaVa\nScRiPt:1",
+    "data:text/html,<x>1</x>",
+    "vbscript:1",
+    "file:///etc/passwd",
+])
+def test_summary_url_scheme_allowlist(shape):
+    """bleach's protocol check is fail-open for a few malformed shapes
+    ("javascript:1", "java[tab]script:2", ...); the url_scheme_filter
+    must strip every href/src whose scheme is not allow-listed."""
+    assert "href" not in sanitize_html(f'<a href="{shape}">c</a>')
+    assert "src" not in sanitize_html(f'<img src="{shape}">')
+
+
+def test_summary_url_allowlist_keeps_good_urls():
+    out = sanitize_html(
+        '<a href="https://ok.example/a?x=1#f">l</a>'
+        '<a href="mailto:a@b.example">m</a>'
+        '<a href="/rel">r</a><a href="#frag">f</a>'
+        '<img src="../img.png" alt="i">')
+    assert "https://ok.example/a?x=1#f" in out
+    assert "mailto:a@b.example" in out
+    assert 'href="/rel"' in out and 'href="#frag"' in out
+    assert 'src="../img.png"' in out
+
+
+def test_feed_urls_never_executable_in_outputs(tmp_path):
+    """End-to-end: nasty feed URLs never reach either output as a
+    navigable javascript: attribute (browser-equivalent flattening)."""
+    import html as html_lib
+    import re
+    feed = tmp_path / "evil.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>bad link</title><link href="javascript:1"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated></entry>'
+        '<entry><title>bad summary</title>'
+        '<link href="https://ok.example/e2"/>'
+        '<id>2</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">'
+        '&lt;a href="java&amp;#9;script:2"&gt;a&lt;/a&gt;'
+        '&lt;img src=" javascript:1"&gt;'
+        '&lt;a href="https://ok.example/x"&gt;ok&lt;/a&gt;'
+        '</content></entry></feed>',
+        encoding="utf-8")
+    config = {
+        "site": {"title": "T", "site_url": "https://p.example/",
+                 "atom_feed_url": "https://p.example/atom.xml"},
+        "output": {"atom_feed": str(tmp_path / "atom.xml"),
+                   "html_view": str(tmp_path / "planet.html")},
+        "limits": {"max_feed_items": 50, "html_view_limit": 50},
+        "feeds": [{"url": str(feed)}],
+    }
+    items = fetch_all_items(config)
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    pattern = re.compile(r"(?:href|src)\s*=\s*[\"'][^\"']*javascript:", re.I)
+    for out in (config["output"]["html_view"], config["output"]["atom_feed"]):
+        text = html_lib.unescape(Path(out).read_text(encoding="utf-8"))
+        flat = text.translate(str.maketrans("", "", "\\t\\n\\r"))
+        assert not pattern.search(flat), out
 
 
 def test_cli_end_to_end(tmp_path):
