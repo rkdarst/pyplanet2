@@ -1,15 +1,36 @@
 # Planet blog aggregator
 
 This is a blog aggregator that takes a list of RSS/Atom feeds
-(configured in yaml) and makes a combined Atom feed and HTML view.  When
-I looked in 2026, I couldn't find any easy to install planets, so I went
-with this.
+(configured in yaml) and makes a combined Atom feed and HTML view.
+When I looked in 2026, I couldn't find any easy to install planet
+software in Python, so I created this.
 
-Warning: this is generated content ("AI").  I partly did it as a test,
-but consider this before you try to modify this as a human.  So far,
-everything below this comment is automatically generated.  Consider
-asking me (a human) to fix it up before trying to extensively use this.
-Or ask me to ask the content generator to add things.
+Features:
+
+* Installation as a pip package, run via `pyplanet2 config.yaml`
+* Configuration via a yaml file.
+* Outputs a .html for viewing and atom.xml for feed readers.
+* Easy usage by Github Pages and similar.
+* Extensive HTML sanitization (should err on the side of caution, but
+  it is AI-generated so please report problems you notice)
+* Caching images for privacy and to reduce web traffic of feeds
+  (this is a bit fragile, validate it works for each feed).
+* Templating with jinja2 and custom CSS may be inserted which should
+  allow you to override any config.  Note the config and format may
+  not be very stable right now.
+
+Status: This is still (2026) in active development and you probably
+shouldn't expect it to be stable yet.
+
+Warning: the code is generated ("AI").  I partly did it as a test,
+partly because I needed it.  Contributions should be in the form of a
+request for me or prompts for *my* content generator to produce by my
+standards.  Large auto-generated pull requests won't be reviewed
+(unless you reach the status of contributor).
+
+**Everything about this line is written by a human.  Everything below
+is generated content ("AI") and you should adjust your reading to
+match.**
 
 
 ## Output files
