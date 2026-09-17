@@ -69,6 +69,10 @@
     main.planet:has(> .feeds-sidebar) { display: grid;
         grid-template-columns: minmax(0, 1fr) 13em;
         column-gap: 1.5em; align-items: start; }
+    /* With a sidebar the page widens (48em posts + gap + 13em feeds)
+       so the posts keep their full reading width and the feeds list
+       is extra width, not taken from the text column. */
+    body:has(.feeds-sidebar) { max-width: 62.5em; }
     main.planet > .generated { grid-column: 1 / -1; }
     main.planet > .post-flow { grid-column: 1; }
     main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
