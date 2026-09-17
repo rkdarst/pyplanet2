@@ -55,7 +55,34 @@
                      background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
                      color: #06c; font-size: 0.85em; cursor: pointer; }
     .summary.clamped + .expand-toggle { display: block; }
-    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999; }
+    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999;
+                   clear: both; }
+    /* Feed sidebar: a real right column beside the post flow, not a
+       float (a float would visually sit inside the first post's card).
+       The grid engages via :has() only when a sidebar is rendered, so
+       the posts keep the full width without one. */
+    main.planet:has(> .feeds-sidebar) { display: grid;
+        grid-template-columns: minmax(0, 1fr) 13em;
+        column-gap: 1.5em; align-items: start; }
+    /* With a sidebar the page widens (48em posts + gap + 13em feeds)
+       so the posts keep their full reading width and the feeds list
+       is extra width, not taken from the text column. */
+    body:has(.feeds-sidebar) { max-width: 62.5em; }
+    main.planet > .generated { grid-column: 1 / -1; }
+    main.planet > .post-flow { grid-column: 1; }
+    main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
+        padding: 0.75em 1em; border: 1px solid #ddd;
+        border-radius: 8px; font-size: 0.85em; }
+    .feeds-sidebar h2 { margin: 0 0 0.5em; font-size: 1.1em; }
+    .feeds-sidebar ul { margin: 0; padding-left: 1.2em; }
+    .feeds-sidebar .feed-ref { font-size: 0.9em; }
+    @media (min-width: 36.01em) {
+      main.planet > .feeds-sidebar { position: sticky; top: 1em; }
+    }
+    @media (max-width: 36em) {
+      main.planet:has(> .feeds-sidebar) { grid-template-columns: 1fr; }
+      main.planet > .feeds-sidebar { grid-column: 1; grid-row: auto; }
+    }
   </style>
   <noscript><style>
     .summary { max-height: none; overflow: visible; }
@@ -72,9 +99,24 @@
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-16T22:32:47+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-17T20:35:15+00:00</span> ·
       <a class="feed-link" href="https://example.com/planet/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
+    
+    <aside class="feeds-sidebar">
+      <h2>Feeds</h2>
+      <ul>
+        
+        <li><a href="example.org">Atom test</a>
+          <a class="feed-ref" href="test-data/atom.xml">feed</a></li>
+        
+        <li><a href="example.org">RSS test</a>
+          <a class="feed-ref" href="test-data/rss.xml">feed</a></li>
+        
+      </ul>
+    </aside>
+    
+    <div class="post-flow">
 
     
     <article class="post">
@@ -85,7 +127,6 @@
           <div class="post-meta">
             <span class="feed-title">Atom test</span>
             <span class="post-date">2003-12-13 18:30 UTC</span>
-            <span class="post-author"> · Author: a</span>
             <span class="post-site"> · Site: <a href="example.org">example.org</a></span>
           </div>
         </div>
@@ -104,7 +145,6 @@
           <div class="post-meta">
             <span class="feed-title">RSS test</span>
             <span class="post-date">2002-09-05 00:00 UTC</span>
-            <span class="post-author"> · Author: b</span>
             <span class="post-site"> · Site: <a href="example.org">example.org</a></span>
           </div>
         </div>
@@ -119,6 +159,7 @@ nasty tricks</span>
       
     </article>
     
+    </div>
   </main>
 
   <footer class="site-footer">
