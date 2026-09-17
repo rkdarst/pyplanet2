@@ -69,7 +69,7 @@ def make_feeds_config(tmp_path, resolve_urls):
     """Config for fetch_all_items() over the RSS sample feed."""
     return {
         "feeds": [{
-            "url": str(REPO / "test-data" / "rss.xml"),
+            "feed": str(REPO / "test-data" / "rss.xml"),
             "name": "RSS test",
             "resolve_urls": resolve_urls,
         }],
@@ -90,19 +90,19 @@ def test_resolve_urls_option(tmp_path):
     assert "http://example.org/images/pic.png" not in off[0]["summary"]
 
 
-def test_author_only_when_configured(tmp_path):
-    """An unset author stays empty (the HTML then omits it) instead of
-    defaulting to the feed name."""
-    base = {"url": str(REPO / "test-data" / "atom.xml")}
-    unset = fetch_all_items({"feeds": [dict(base)]})
-    assert unset[0]["author"] == ""
-    configured = fetch_all_items({"feeds": [{**base, "author": "Jane"}]})
-    assert configured[0]["author"] == "Jane"
+def test_feed_title_is_the_local_name_only(tmp_path):
+    """The displayed feed title always comes from the config's name --
+    a feed's own remote <title> is never shown, and the old author key
+    is gone entirely."""
+    items = fetch_all_items({"feeds": [
+        {"feed": str(REPO / "test-data" / "atom.xml"), "name": "My Blog"}]})
+    assert items[0]["feed_title"] == "My Blog"
+    assert "author" not in items[0]
 
 
 def make_atom_config(**feed_opts):
     """Config for fetch_all_items() over the Atom sample feed."""
-    feed = {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test"}
+    feed = {"feed": str(REPO / "test-data" / "atom.xml"), "name": "Atom test"}
     feed.update(feed_opts)
     return {"feeds": [feed]}
 
@@ -150,7 +150,7 @@ def test_summaries_sanitized_once_for_all_outputs(tmp_path):
         '&lt;form&gt;&lt;button formaction="javascript:x"&gt;b&lt;/button&gt;&lt;/form&gt;'
         'still-ok</content></entry></feed>',
         encoding="utf-8")
-    items = fetch_all_items({"feeds": [{"url": str(feed)}]})
+    items = fetch_all_items({"feeds": [{"feed": str(feed)}]})
     assert "<iframe" not in items[0]["summary"]
     assert "<form" not in items[0]["summary"]
     assert "still-ok" in items[0]["summary"]
@@ -213,7 +213,7 @@ def test_feed_urls_never_executable_in_outputs(tmp_path):
         "output": {"atom_feed": str(tmp_path / "atom.xml"),
                    "html_view": str(tmp_path / "planet.html")},
         "limits": {"max_feed_items": 50, "html_view_limit": 50},
-        "feeds": [{"url": str(feed)}],
+        "feeds": [{"feed": str(feed)}],
     }
     items = fetch_all_items(config)
     generate_atom_feed(items, config["output"]["atom_feed"], config)
@@ -238,7 +238,7 @@ def test_config_validation_reports_missing_keys(tmp_path, capsys):
         "site": {"title": "t", "site_url": "u", "atom_feed_url": "a"},
         "output": {"atom_feed": "x", "html_view": "h"},
         "limits": {"max_feed_items": 1, "html_view_limit": 1},
-        "feeds": [{"url": "u"}],
+        "feeds": [{"feed": "u", "name": "n"}],
     })
 
 
@@ -246,7 +246,7 @@ def test_missing_local_feed_is_fatal(tmp_path, capsys):
     """A configured local feed file that does not exist stops the build
     with a clear message instead of silently contributing nothing."""
     with pytest.raises(SystemExit):
-        fetch_all_items({"feeds": [{"url": str(tmp_path / "nope.xml")}]})
+        fetch_all_items({"feeds": [{"feed": str(tmp_path / "nope.xml")}]})
     assert "local feed file not found" in capsys.readouterr().err
 
 
@@ -254,7 +254,7 @@ def test_corrupt_local_feed_is_fatal(tmp_path, capsys):
     corrupt = tmp_path / "bad.xml"
     corrupt.write_text("hello, definitely not a feed")
     with pytest.raises(SystemExit):
-        fetch_all_items({"feeds": [{"url": str(corrupt)}]})
+        fetch_all_items({"feeds": [{"feed": str(corrupt)}]})
     assert "local feed unreadable" in capsys.readouterr().err
 
 
@@ -278,8 +278,8 @@ def test_remote_feed_failure_warns_and_continues(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(core.feedparser, "parse", fake_parse)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     items = fetch_all_items({"feeds": [
-        {"url": "http://dead.example/feed.xml"},
-        {"url": str(REPO / "test-data" / "atom.xml")},
+        {"feed": "http://dead.example/feed.xml"},
+        {"feed": str(REPO / "test-data" / "atom.xml")},
     ]})
     assert items, "the working local feed must still contribute"
     out = capsys.readouterr().out
@@ -290,7 +290,7 @@ def test_remote_feed_failure_warns_and_continues(tmp_path, monkeypatch, capsys):
 def test_valid_empty_feed_is_silent(tmp_path, capsys):
     empty = tmp_path / "empty.xml"
     empty.write_text('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>')
-    assert fetch_all_items({"feeds": [{"url": str(empty)}]}) == []
+    assert fetch_all_items({"feeds": [{"feed": str(empty)}]}) == []
     assert "WARNING" not in capsys.readouterr().out
 
 
@@ -314,8 +314,8 @@ def test_max_posts_per_feed_caps_html_only(tmp_path):
                    "html_view": str(tmp_path / "page.html")},
         "limits": {"max_feed_items": 100, "html_view_limit": 50,
                    "max_posts_per_feed": 1},
-        "feeds": [{"url": str(big)},
-                  {"url": str(REPO / "test-data" / "atom.xml")}],
+        "feeds": [{"feed": str(big)},
+                  {"feed": str(REPO / "test-data" / "atom.xml")}],
     }
     items = fetch_all_items(config)
     assert len(items) == 4
@@ -348,13 +348,120 @@ def test_max_age_days_drops_old_posts_everywhere(tmp_path):
                  "atom_feed_url": "https://p.example/atom.xml"},
         "output": {"atom_feed": str(tmp_path / "atom.xml"),
                    "html_view": str(tmp_path / "page.html")},
-        "feeds": [{"url": str(feed)}],
+        "feeds": [{"feed": str(feed)}],
     }
     old = dict(base, limits={"max_feed_items": 100, "html_view_limit": 50,
                              "max_age_days": 30})
     assert [i["title"] for i in fetch_all_items(old)] == ["Fresh"]
     unlimited = dict(base, limits={"max_feed_items": 100, "html_view_limit": 50})
     assert len(fetch_all_items(unlimited)) == 2
+
+
+def theming_config(tmp_path):
+    """A full valid config over the Atom test feed for template tests."""
+    return {
+        "site": {"title": "Theme Planet", "site_url": "https://p.example/",
+                 "atom_feed_url": "https://p.example/atom.xml"},
+        "output": {"atom_feed": str(tmp_path / "atom.xml"),
+                   "html_view": str(tmp_path / "page.html")},
+        "limits": {"max_feed_items": 100, "html_view_limit": 50},
+        "feeds": [{"feed": str(REPO / "test-data" / "atom.xml"),
+                   "name": "Atom test"}],
+    }
+
+
+def test_feed_name_required_and_template_check(tmp_path, capsys):
+    """A feed without a local name, or a paths.template typo, fails
+    validation with a clear message before any fetching starts."""
+    config = theming_config(tmp_path)
+    del config["feeds"][0]["name"]
+    with pytest.raises(SystemExit):
+        validate_config(config)
+    err = capsys.readouterr().err
+    assert "feeds[0].name" in err
+    config["feeds"][0]["name"] = "n"
+    config["paths"] = {"template": "nope.html"}
+    with pytest.raises(SystemExit):
+        validate_config(config)
+    err = capsys.readouterr().err
+    assert "nope.html" in err and "not found" in err
+
+
+def test_theme_extends_base_blocks(tmp_path):
+    """A user template in paths.template_dir extends the bundled base
+    and overrides single blocks; everything else comes from the base."""
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    (themes / "custom.html").write_text(
+        '{% extends "planet.html" %}\n'
+        '{% block footer %}<footer class="mine">Handmade</footer>{% endblock %}\n',
+        encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["paths"] = {"template_dir": str(themes), "template": "custom.html"}
+    items = fetch_all_items(config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert "Handmade" in page
+    assert "pyplanet2 blog aggregator" not in page  # base footer replaced
+    assert "Theme Planet" in page                   # base header intact
+    assert "Atom-Powered Robots" in page            # posts intact
+
+
+def test_theme_sidebar_lists_configured_feeds(tmp_path):
+    """The feeds context carries every configured feed with its local
+    name for theme blocks such as a sidebar -- feeds without posts
+    included."""
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    (themes / "side.html").write_text(
+        '{% extends "planet.html" %}\n'
+        '{% block sidebar %}<aside>{% for f in feeds %}'
+        '<a href="{{ f.site }}">{{ f.title }}</a>{% endfor %}</aside>'
+        '{% endblock %}\n', encoding="utf-8")
+    (tmp_path / "empty.xml").write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '</feed>', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["feeds"].append({"feed": str(tmp_path / "empty.xml"),
+                            "name": "Silent blog",
+                            "site": "https://s.example/"})
+    config["paths"] = {"template_dir": str(themes), "template": "side.html"}
+    items = fetch_all_items(config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert page.count("<aside>") == 1
+    assert ">Atom test</a>" in page and ">Silent blog</a>" in page
+
+
+def test_theme_replaces_base_completely(tmp_path):
+    """Without extends a template fully replaces the base output."""
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    (themes / "plain.html").write_text(
+        'REPLACED: {{ site_title }} / {{ posts|length }} posts / '
+        '{% for f in feeds %}{{ f.title }};{% endfor %}', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["paths"] = {"template_dir": str(themes), "template": "plain.html"}
+    items = fetch_all_items(config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert page == f"REPLACED: Theme Planet / {len(items)} posts / Atom test;"
+
+
+def test_default_sidebar_links_feeds(tmp_path):
+    """The base template's default sidebar lists every feed: the name
+    links to the site and a separate "feed" link goes to the feed."""
+    config = theming_config(tmp_path)
+    config["feeds"].append({"feed": str(REPO / "test-data" / "rss.xml"),
+                            "name": "RSS test",
+                            "site": "https://blog.example.org/"})
+    items = fetch_all_items(config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert page.count("feeds-sidebar") >= 1  # aside renders by default
+    assert 'href="https://blog.example.org/">RSS test</a>' in page
+    assert '>RSS test</a>' in page and 'feed-ref' in page
+    assert f'href="{config["feeds"][0]["feed"]}">' in page  # name link falls back to url
 
 
 def test_cli_end_to_end(tmp_path):
@@ -373,9 +480,9 @@ def test_cli_end_to_end(tmp_path):
         },
         "limits": {"max_feed_items": 100, "html_view_limit": 10},
         "feeds": [
-            {"url": str(REPO / "test-data" / "atom.xml"), "name": "Atom test",
+            {"feed": str(REPO / "test-data" / "atom.xml"), "name": "Atom test",
              "icon": "https://example.org/atom-icon.png"},
-            {"url": str(REPO / "test-data" / "rss.xml"), "name": "RSS test",
+            {"feed": str(REPO / "test-data" / "rss.xml"), "name": "RSS test",
              "resolve_urls": True},
         ],
     }
@@ -396,8 +503,6 @@ def test_cli_end_to_end(tmp_path):
     # grey placeholder box
     assert "https://example.org/atom-icon.png" in html_text
     assert "icon-placeholder" in html_text
-    # no feed configures an author, so the meta line omits it entirely
-    assert "Author:" not in html_text
 
     atom_text = (tmp_path / "atom.xml").read_text(encoding="utf-8")
     ElementTree.fromstring(atom_text)  # raises if not valid XML

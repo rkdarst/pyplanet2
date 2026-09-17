@@ -63,13 +63,26 @@ def validate_config(config):
             node = node[part]
     if isinstance(config.get("feeds"), list):
         for i, feed in enumerate(config["feeds"]):
-            if not isinstance(feed, dict) or "url" not in feed:
-                missing.append(f"feeds[{i}].url")
+            if not isinstance(feed, dict):
+                missing.append(f"feeds[{i}]")
+                continue
+            for key in ("feed", "name"):
+                if key not in feed:
+                    missing.append(f"feeds[{i}].{key}")
     if missing:
         print("ERROR: config is missing required key(s): "
               + ", ".join(missing), file=sys.stderr)
         print("See the README sample config for the full shape.",
               file=sys.stderr)
+        sys.exit(1)
+    # Fail before fetching, not mid-render, on a template typo.
+    paths = config.get("paths") or {}
+    template = paths.get("template", "planet.html")
+    search = ([Path(paths["template_dir"])] if paths.get("template_dir")
+              else []) + [TEMPLATE_DIR]
+    if not any((d / template).is_file() for d in search):
+        print(f"ERROR: HTML template '{template}' not found (looked in: "
+              + ", ".join(str(d) for d in search) + ")", file=sys.stderr)
         sys.exit(1)
     return config
 
@@ -260,7 +273,7 @@ def fetch_all_items(config):
 
     The item dicts are the internal contract between this function,
     localize_images() and the two generators below: "dt" (aware
-    datetime), "feed_title", "author", "site", "icon" (plain strings,
+    datetime), "feed_title", "site", "icon" (plain strings,
     "" when unset), "title", "link" (scheme-checked by safe_link) and
     "summary" (sanitized HTML) and "feed_id" (index of the feed in
     the config).  localize_images() may add "img_map".
@@ -275,7 +288,7 @@ def fetch_all_items(config):
     items = []
 
     for feed_id, feed_config in enumerate(config["feeds"]):
-        feed_url = feed_config["url"]
+        feed_url = feed_config["feed"]
         # resolve_urls: rewrite relative URLs inside items against each
         # item's own link, instead of feedparser's default of resolving
         # against the feed URL (wrong for blogs with posts in
@@ -298,9 +311,11 @@ def fetch_all_items(config):
             _annotate("warning", f"{feed_url}: {reason}")
             continue
 
-        # Use configured name, or fall back to feed title or URL
-        feed_title = feed_config.get("name", feed.feed.get("title", feed_url))
-        author = feed_config.get("author", "")
+        # Display title: the locally configured name only -- a feed's
+        # own <title> is remote input and never displayed (validate
+        # requires name; the URL fallback only concerns calls that
+        # bypass validation).
+        feed_title = feed_config.get("name", feed_url)
         site = feed_config.get("site", feed_url)
         icon = feed_config.get("icon", "")
 
@@ -323,7 +338,6 @@ def fetch_all_items(config):
                 "dt": dt,
                 "feed_id": feed_id,
                 "feed_title": feed_title,
-                "author": author,
                 "site": site,
                 "icon": icon,
                 "title": title,
@@ -395,13 +409,26 @@ def generate_html_view(items, output_file, template_dir, config):
         if len(html_items) >= limit:
             break
 
-    # Setup Jinja2 environment (autoescape on; only bleach-sanitized
-    # values are marked |safe in the template)
-    env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
-    template = env.get_template("planet.html")
+    # Jinja2 environment (autoescape on; only bleach-sanitized values
+    # are marked |safe in the template).  A configured template_dir is
+    # searched first: templates there can shadow the bundled ones by
+    # name or {% extends %} them via the package-dir fallback.
+    paths = config.get("paths") or {}
+    user_dir = paths.get("template_dir")
+    env = Environment(loader=FileSystemLoader(
+        [user_dir, template_dir] if user_dir else template_dir),
+        autoescape=True)
+    template = env.get_template(paths.get("template", "planet.html"))
+
+    # Feed list for theme templates (e.g. a sidebar): every configured
+    # feed, named by its local name only.
+    feeds = [{"title": fc.get("name", fc["feed"]), "feed": fc["feed"],
+              "site": fc.get("site", fc["feed"]),
+              "icon": fc.get("icon", "")} for fc in config["feeds"]]
 
     html_content = template.render(
         posts=html_items,
+        feeds=feeds,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         site_title=config["site"]["title"],
         css_files=config["output"].get("css", []),

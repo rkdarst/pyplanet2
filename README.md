@@ -88,12 +88,12 @@ limits:
 
 # Feeds to aggregate
 feeds:
-  - url: "https://blog.example.org/feed.xml"  # required; a local path also
+  - feed: "https://blog.example.org/feed.xml"  # required; a local path also
                                     # works, for offline testing
-    # name: "Some Blog"             # optional display name; defaults to the
-                                    # feed's own title
-    # author: "Jane Doe"            # optional; shown in the post meta line,
-                                    # omitted from it when unset
+    name: "Some Blog"             # required; the ONLY displayed feed title
+                                    # (a feed's own remote title is untrusted
+                                    # input and never used); also the name
+                                    # templates see in the feeds list
     # site: "https://blog.example.org"  # optional link for the name/icon;
                                     # defaults to the feed url
     # icon: "https://blog.example.org/favicon.ico"
@@ -111,6 +111,50 @@ feeds:
 # An optional `images` section localizes referenced images; see the
 # "Image caching" section below for its keys.
 ```
+
+## Customizing the HTML view
+
+The HTML page is a Jinja2 template.  Both `paths` keys are optional;
+without them the bundled `planet.html` renders as-is.  A user template
+normally extends that base and redefines only the blocks it needs:
+
+```yaml
+paths:
+  template_dir: ./themes      # optional; searched before the built-ins
+  template: dark.html         # optional; default planet.html
+```
+
+```jinja
+{# themes/dark.html #}
+{% extends "planet.html" %}
+{% block styles %}{{ super() }}
+<style>body { background: #111; color: #ddd; }</style>
+{% endblock %}
+{% block footer %}<footer>My planet &mdash; powered by pyplanet2</footer>{% endblock %}
+```
+
+Overridable blocks: `title`, `styles`, `head_extra`, `header`,
+`generated_info`, `posts`, `post`, `post_icon`, `post_meta`,
+`post_summary`, `sidebar` (right-side feed list), `footer`, `scripts`.
+The four `post*` blocks are `scoped`, so `item` is available in them.
+A template that does not `extends` replaces the page completely.
+Variables: `site_title`, `atom_feed_url`, `generated_at`, `logo`,
+`css_files`, `posts` (each with `title`, `link`, `date`, `feed_title`,
+`site`, `icon`, `summary`) and `feeds` (every configured feed as
+`title`/`feed`/`site`/`icon`); the base template uses it for the
+default right-hand feed sidebar, which a theme can restyle or replace:
+
+```jinja
+{% block sidebar %}
+<aside>{% for f in feeds %}
+  <a href="{{ f.site }}">{{ f.title }}</a>
+{% endfor %}</aside>
+{% endblock %}
+```
+
+Note: do not name your own template `planet.html` inside
+`template_dir` if it also `{% extends "planet.html" %}` -- that
+resolves to itself; pick a distinct name.
 
 ## Image caching
 

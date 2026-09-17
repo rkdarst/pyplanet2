@@ -22,14 +22,12 @@ limits:
 # Feed configuration with metadata
 feeds:
 
-  - url: "test-data/atom.xml"
+  - feed: "test-data/atom.xml"
     name: "Atom test"
-    author: "a"
     site: "example.org"
     icon: "https://example.org/atom-icon.png"
 
-  - url: "test-data/rss.xml"
+  - feed: "test-data/rss.xml"
     name: "RSS test"
-    author: "b"
     site: "example.org"
     resolve_urls: true

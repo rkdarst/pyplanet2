@@ -1,10 +1,15 @@
+{#- Overridable blocks for theme templates (see README "Customizing
+    the HTML view"): title, styles, head_extra, header, generated_info,
+    posts, post, post_icon, post_meta, post_summary, sidebar (right-side
+    feed list), footer, scripts. -#}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ site_title }}</title>
+  <title>{% block title %}{{ site_title }}{% endblock %}</title>
   <link rel="alternate" type="application/atom+xml" title="{{ site_title }} Atom feed" href="{{ atom_feed_url }}">
+  {%- block styles %}
   <style>
     body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
            max-width: 46em; margin: 0 auto; padding: 1em;
@@ -55,8 +60,32 @@
                      background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
                      color: #06c; font-size: 0.85em; cursor: pointer; }
     .summary.clamped + .expand-toggle { display: block; }
-    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999; }
+    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999;
+                   clear: both; }
+    /* Feed sidebar: a real right column beside the post flow, not a
+       float (a float would visually sit inside the first post's card).
+       The grid engages via :has() only when a sidebar is rendered, so
+       the posts keep the full width without one. */
+    main.planet:has(> .feeds-sidebar) { display: grid;
+        grid-template-columns: minmax(0, 1fr) 13em;
+        column-gap: 1.5em; align-items: start; }
+    main.planet > .generated { grid-column: 1 / -1; }
+    main.planet > .post-flow { grid-column: 1; }
+    main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
+        padding: 0.75em 1em; border: 1px solid #ddd;
+        border-radius: 8px; font-size: 0.85em; }
+    .feeds-sidebar h2 { margin: 0 0 0.5em; font-size: 1.1em; }
+    .feeds-sidebar ul { margin: 0; padding-left: 1.2em; }
+    .feeds-sidebar .feed-ref { font-size: 0.9em; }
+    @media (min-width: 36.01em) {
+      main.planet > .feeds-sidebar { position: sticky; top: 1em; }
+    }
+    @media (max-width: 36em) {
+      main.planet:has(> .feeds-sidebar) { grid-template-columns: 1fr; }
+      main.planet > .feeds-sidebar { grid-column: 1; grid-row: auto; }
+    }
   </style>
+  {%- endblock %}
   <noscript><style>
     .summary { max-height: none; overflow: visible; }
   </style></noscript>
@@ -65,8 +94,10 @@
   {%- for css_file in css_files %}
   <link rel="stylesheet" href="{{ css_file }}">
   {%- endfor %}
+  {%- block head_extra %}{% endblock %}
 </head>
 <body>
+  {%- block header %}
   <header class="site-header">
     {% if logo %}
     <img class="logo" src="{{ logo }}" alt="{{ site_title }} logo">
@@ -75,15 +106,37 @@
     {% endif %}
     <h1 class="site-title">{{ site_title }}</h1>
   </header>
+  {%- endblock %}
 
   <main class="planet">
+    {%- block generated_info %}
     <p class="generated">Generated <span class="generated-at">{{ generated_at }}</span> ·
       <a class="feed-link" href="{{ atom_feed_url }}">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
+    {%- endblock %}
+
+    {%- block sidebar %}
+    {% if feeds %}
+    <aside class="feeds-sidebar">
+      <h2>Feeds</h2>
+      <ul>
+        {% for f in feeds %}
+        <li><a href="{{ f.site }}">{{ f.title }}</a>
+          <a class="feed-ref" href="{{ f.feed }}">feed</a></li>
+        {% endfor %}
+      </ul>
+    </aside>
+    {% endif %}
+    {%- endblock %}
+
+    {%- block posts %}
+    <div class="post-flow">
 
     {% for item in posts %}
+    {%- block post scoped %}
     <article class="post">
       <div class="post-header">
+        {%- block post_icon scoped %}
         {%- if item.site %}<a class="post-icon-link" href="{{ item.site }}">{% endif %}
         {%- if item.icon %}
         <img class="post-icon" src="{{ item.icon }}" alt="{{ item.feed_title }}">
@@ -91,27 +144,37 @@
         <div class="post-icon icon-placeholder"></div>
         {%- endif %}
         {%- if item.site %}</a>{% endif %}
+        {%- endblock %}
         <div>
           <h1 class="post-title"><a class="post-link" href="{{ item.link }}">{{ item.title }}</a></h1>
           <div class="post-meta">
+            {%- block post_meta scoped %}
             <span class="feed-title">{{ item.feed_title }}</span>
             <span class="post-date">{{ item.date }}</span>
-            {% if item.author %}<span class="post-author"> · Author: {{ item.author }}</span>{% endif %}
             {% if item.site %}<span class="post-site"> · Site: <a href="{{ item.site }}">{{ item.site }}</a></span>{% endif %}
+            {%- endblock %}
           </div>
         </div>
       </div>
+      {%- block post_summary scoped %}
       {% if item.summary %}
       <div class="summary">{{ item.summary|safe }}</div>
       <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
       {% endif %}
+      {%- endblock post_summary %}
     </article>
+    {%- endblock post %}
     {% endfor %}
+    </div>
+    {%- endblock posts %}
   </main>
+  {%- block footer %}
 
   <footer class="site-footer">
     <span class="generator">pyplanet2 blog aggregator</span>
   </footer>
+  {%- endblock %}
+  {%- block scripts %}
 
   <script>
     // Summaries are clamped by default in CSS; classify() measures them
@@ -169,5 +232,6 @@
       resizeTimer = setTimeout(classify, 150);
     });
   </script>
+  {%- endblock %}
 </body>
 </html>
