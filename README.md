@@ -26,7 +26,9 @@ Warning: the code is generated ("AI").  I partly did it as a test,
 partly because I needed it.  Contributions should be in the form of a
 request for me or prompts for *my* content generator to produce by my
 standards.  Large auto-generated pull requests won't be reviewed
-(unless you reach the status of contributor).
+(unless you reach the status of contributor).  Given it is
+machine-generated, it is CC-0 and you are welcome to fork and develop
+further.
 
 **Everything about this line is written by a human.  Everything below
 is generated content ("AI") and you should adjust your reading to
