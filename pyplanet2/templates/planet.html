@@ -133,7 +133,7 @@
       <ul>
         {% for f in feeds %}
         <li><a href="{{ f.site }}">{{ f.title }}</a>
-          <a class="feed-ref" href="{{ f.feed }}">feed</a></li>
+          (<a class="feed-ref" href="{{ f.feed }}">feed</a>)</li>
         {% endfor %}
       </ul>
     </aside>
