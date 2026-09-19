@@ -2,5 +2,15 @@
 <feed xmlns="http://www.w3.org/2005/Atom"><title>Test Planet</title><link href="https://example.com/planet/" rel="alternate"/><link href="https://example.com/planet/atom.xml" rel="self"/><id>https://example.com/planet/atom.xml</id><updated>2003-12-13T18:30:02+00:00</updated><entry><title>Atom-Powered Robots Run Amok</title><link href="http://example.org/2003/12/13/atom03" rel="alternate"/><updated>2003-12-13T18:30:02+00:00</updated><author><name>Atom test</name></author><id>http://example.org/2003/12/13/atom03</id><summary type="html">&lt;p&gt;The full text. CONTENT-MARKER&lt;/p&gt;</summary></entry><entry><title>First item title</title><link href="http://example.org/item/1" rel="alternate"/><updated>2002-09-05T00:00:01+00:00</updated><author><name>RSS test</name></author><id>http://example.org/item/1</id><summary type="html">Watch out for
 &lt;span&gt;
 nasty tricks&lt;/span&gt;
-&lt;img alt="pic" src="http://example.org/images/pic.png"&gt;
-&lt;a href="http://example.org/about.html"&gt;about&lt;/a&gt;</summary></entry></feed>
+&lt;img src="http://example.org/images/pic.png" alt="pic"&gt;
+&lt;a href="http://example.org/about.html"&gt;about&lt;/a&gt;</summary></entry><entry><title>Mixed Media Demo</title><link href="http://example.org/2002/09/04/mixed.html" rel="alternate"/><updated>2002-09-04T00:00:01+00:00</updated><author><name>RSS test</name></author><id>http://example.org/2002/09/04/mixed.html</id><summary type="html">&lt;p&gt;Some embedded content from this post is not shown here (button, form, iframe, input, svg, video) - consider seeing the original post.&lt;/p&gt;&lt;p&gt;A post mixing readable text with embedded media, to preview the
+&lt;em&gt;content not shown&lt;/em&gt; note the aggregator adds.&lt;/p&gt;
+&lt;p&gt;The video player below is dropped, so this post carries a warning
+listing the removed elements right under its title.&lt;/p&gt;
+watch this clip
+
+
+Sign up
+
+&lt;p&gt;Text and links like &lt;a href="http://example.org/notes"&gt;this one&lt;/a&gt;
+always survive the sanitizer untouched.&lt;/p&gt;</summary></entry></feed>

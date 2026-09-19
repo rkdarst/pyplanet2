@@ -53,6 +53,7 @@
     .post-title { margin: 0 0 0.25em; overflow-wrap: break-word; }
     .post-link { color: var(--title); text-decoration: none; }
     .post-meta { font-size: 0.85em; color: var(--muted); }
+    .content-note { margin: 0.25em 0 0; font-size: 0.85em; color: var(--muted); }
     .feed-title { font-weight: bold; }
     .feed-title a { color: inherit; }
     .summary { margin-top: 0.5em; position: relative;
@@ -133,7 +134,7 @@
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-19T11:54:54+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-19T17:37:18+00:00</span> ·
       <a class="feed-link" href="https://example.com/planet/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
     
@@ -185,8 +186,36 @@
       <div class="summary">Watch out for
 <span>
 nasty tricks</span>
-<img alt="pic" src="http://example.org/images/pic.png">
+<img src="http://example.org/images/pic.png" alt="pic">
 <a href="http://example.org/about.html">about</a></div>
+      <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
+      
+    </article>
+    
+    <article class="post">
+      <div class="post-header"><a class="post-icon-link" href="example.org">
+        <div class="post-icon icon-placeholder"></div></a>
+        <div>
+          <h1 class="post-title"><a class="post-link" href="http://example.org/2002/09/04/mixed.html">Mixed Media Demo</a></h1>
+          <div class="post-meta">
+            <span class="feed-title"><a href="example.org">RSS test</a></span>
+            <span class="post-date">2002-09-04 00:00 UTC</span>
+          </div>
+          <p class="content-note">Some embedded content from this post is not shown here (button, form, iframe, input, svg, video) - consider seeing the original post.</p>
+        </div>
+      </div>
+      
+      <div class="summary"><p>A post mixing readable text with embedded media, to preview the
+<em>content not shown</em> note the aggregator adds.</p>
+<p>The video player below is dropped, so this post carries a warning
+listing the removed elements right under its title.</p>
+watch this clip
+
+
+Sign up
+
+<p>Text and links like <a href="http://example.org/notes">this one</a>
+always survive the sanitizer untouched.</p></div>
       <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
       
     </article>
