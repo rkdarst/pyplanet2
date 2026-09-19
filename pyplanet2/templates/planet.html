@@ -41,7 +41,7 @@
     /* Never upscaled: height is capped, width free, so a wide logo
        keeps its shape and downscales only when too tall.  The
        placeholder div has no intrinsic size, hence its own 48px. */
-    .logo { max-height: 4.5em; flex-shrink: 0; border-radius: 4px; }
+    .logo { max-height: 4.5em; max-width: 100%; flex-shrink: 0; border-radius: 4px; }
     .logo-placeholder { width: 72px; height: 72px; background: var(--line); }
     .site-title { margin: 0; font-size: 2.25em; color: var(--brand); }
     .generated { margin: 1em 0 0; font-size: 0.85em; color: var(--muted); }
@@ -55,7 +55,7 @@
                  flex-shrink: 0; object-fit: cover; }
     .icon-placeholder { background: var(--line); }
     .post-icon-link { text-decoration: none; }
-    .post-title { margin: 0 0 0.25em; }
+    .post-title { margin: 0 0 0.25em; overflow-wrap: break-word; }
     .post-link { color: var(--title); text-decoration: none; }
     .post-meta { font-size: 0.85em; color: var(--muted); }
     .feed-title { font-weight: bold; }
@@ -66,6 +66,7 @@
        images shrink (ratio kept even with width/height attributes),
        long strings wrap, wide blocks scroll within themselves. */
     .summary img { max-width: 100%; height: auto; }
+    .summary iframe, .summary video, .summary embed { max-width: 100%; height: auto; }
     .summary { overflow-wrap: break-word; }
     .summary pre, .summary table { overflow-x: auto; max-width: 100%; }
     .summary table { display: block; }
@@ -109,13 +110,16 @@
     main.planet > .post-flow { grid-column: 1; }
     main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
         padding: 0.75em 1em; border: 1px solid var(--line);
-        border-radius: 8px; font-size: 0.85em; }
+        border-radius: 8px; font-size: 0.85em; overflow-wrap: break-word; }
     .feeds-sidebar a { color: var(--title); }
     .feeds-sidebar h2 { margin: 0 0 0.5em; font-size: 1.1em; }
     .feeds-sidebar ul { margin: 0; padding-left: 1.2em; }
     .feeds-sidebar .feed-ref { font-size: 0.9em; }
     @media (max-width: 42em) {
-      main.planet:has(> .feeds-sidebar) { grid-template-columns: 1fr; }
+      /* minmax(0, ...) not 1fr: the zero floor lets the track shrink
+         below oversized feed content, which the guards above and
+         below then clamp -- plain 1fr would stretch the whole page. */
+      main.planet:has(> .feeds-sidebar) { grid-template-columns: minmax(0, 1fr); }
       main.planet > .feeds-sidebar { grid-column: 1; grid-row: auto; }
     }
   </style>
