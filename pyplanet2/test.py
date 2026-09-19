@@ -604,7 +604,7 @@ def test_cli_end_to_end(tmp_path):
 # --- image cache ---------------------------------------------------------
 
 def img_config(tmp_path, **img_opts):
-    images = {"dir": str(tmp_path / "images")}
+    images = {"dir": str(tmp_path / "images-cached")}
     images.update(img_opts)
     return {"site": {"site_url": "https://planet.example/"}, "images": images}
 
@@ -626,7 +626,8 @@ def test_localize_downloads_and_rewrites(tmp_path):
     html = rewrite_images(items[0]["summary"], mapping, "html")
     assert f'src="{url}"' not in html
     assert f'src={mapping[url]["html"]}' in html.replace('"', "")
-    cached = [p for p in (tmp_path / "images").iterdir() if p.suffix == ".png"]
+    cached = [p for p in (tmp_path / "images-cached").iterdir()
+            if p.suffix == ".png"]
     assert cached and cached[0].read_bytes() == b"PNGDATA"
     assert len(cached[0].stem) == 16  # hash-only file name
 
@@ -721,4 +722,4 @@ def test_large_images_dropped_not_remote(tmp_path):
     # the fine one is cached and mapped for the generators to rewrite
     assert fine in items[0]["img_map"]
     assert items[0]["img_map"][fine]["html"].endswith(".png")
-    assert (tmp_path / "images").is_dir()  # the fine one was cached
+    assert (tmp_path / "images-cached").is_dir()  # the fine one was cached

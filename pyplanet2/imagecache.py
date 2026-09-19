@@ -219,7 +219,7 @@ def localize_images(items, config, fetcher=None):
     rewritten in place (icons only appear in the HTML view).
     """
     imgcfg = config.get("images") or {}
-    dir_name = str(imgcfg.get("dir", "images")).rstrip("/")
+    dir_name = str(imgcfg.get("dir", "images-cached")).rstrip("/")
     cache_dir = Path(dir_name)
     ttl = timedelta(days=imgcfg.get("ttl_days", 1))
     base_url = str(imgcfg.get("base_url")

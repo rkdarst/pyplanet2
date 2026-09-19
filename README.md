@@ -232,7 +232,7 @@ request that transfers nothing when the image is unchanged.
 
 ```yaml
 images:
-  dir: "images"   # cache = deploy output directory
+  dir: "images-cached"  # cache = deploy output directory
   ttl_days: 1     # skip revalidation for entries younger than this
   # image_cache_max_bytes: 10485760  # larger images are dropped (10 MB)
   # base_url: "https://example.com/planet/"  # default: site.site_url
