@@ -2,4 +2,4 @@
 /atom.xml
 __pycache__/
 .pytest_cache/
-/images/
+/images-cached/
