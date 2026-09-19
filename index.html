@@ -6,32 +6,47 @@
   <title>Test Planet</title>
   <link rel="alternate" type="application/atom+xml" title="Test Planet Atom feed" href="https://example.com/planet/atom.xml">
   <style>
+    /* Theme palette: override these in an output.css stylesheet or a
+       styles block; every visual default below hangs off them.  The
+       derived tiers follow --fg/--bg automatically, so a dark theme is
+       just:  :root { --bg: #111; --fg: #ddd; --title: #6af; }  */
+    :root { --bg: #fff;      --fg: #222;      --title: #06c;
+            --brand: #06c;   /* same hue as --title by default, by intent */
+            --link: var(--title);
+            --line: #ddd;
+            --muted:  color-mix(in srgb, var(--fg) 62%, var(--bg));
+            --faint:  color-mix(in srgb, var(--fg) 46%, var(--bg));
+            --shadow: color-mix(in srgb, var(--fg) 15%, transparent); }
     body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
            max-width: 46em; margin: 0 auto; padding: 1em;
-           color: #222; line-height: 1.5; }
+           background: var(--bg); color: var(--fg); line-height: 1.5; }
+    /* One default for every anchor; class rules below opt out as needed
+       (post/sidebar links take --title, feed names keep --muted). */
+    a { color: var(--link); }
     .site-header { display: flex; align-items: center; gap: 0.75em;
-                   padding-bottom: 0.5em; border-bottom: 2px solid #444; }
+                   padding-bottom: 0.5em; border-bottom: 2px solid var(--fg); }
     /* Never upscaled: height is capped, width free, so a wide logo
        keeps its shape and downscales only when too tall.  The
        placeholder div has no intrinsic size, hence its own 48px. */
     .logo { max-height: 4.5em; flex-shrink: 0; border-radius: 4px; }
-    .logo-placeholder { width: 72px; height: 72px; background: #ddd; }
-    .site-title { margin: 0; font-size: 1.5em; }
-    .generated { margin: 1em 0 0; font-size: 0.85em; color: #777; }
+    .logo-placeholder { width: 72px; height: 72px; background: var(--line); }
+    .site-title { margin: 0; font-size: 2.25em; color: var(--brand); }
+    .generated { margin: 1em 0 0; font-size: 0.85em; color: var(--muted); }
     .post { padding: 1em 1.25em; margin-bottom: 1.25em;
-            border: 1px solid #ddd; border-radius: 8px; }
+            border: 1px solid var(--line); border-radius: 8px; }
     .post-header { display: flex; align-items: center; gap: 0.75em;
                    margin-bottom: 0.5em; }
     /* Per-feed icon (feeds[].icon in the config); feeds without one
        get a grey placeholder box.  Linked to the feed's site when set. */
     .post-icon { width: 3.75em; height: 3.75em; border-radius: 50%;
                  flex-shrink: 0; object-fit: cover; }
-    .icon-placeholder { background: #ddd; }
+    .icon-placeholder { background: var(--line); }
     .post-icon-link { text-decoration: none; }
     .post-title { margin: 0 0 0.25em; }
-    .post-link { color: #06c; text-decoration: none; }
-    .post-meta { font-size: 0.85em; color: #666; }
+    .post-link { color: var(--title); text-decoration: none; }
+    .post-meta { font-size: 0.85em; color: var(--muted); }
     .feed-title { font-weight: bold; }
+    .feed-title a { color: inherit; }
     .summary { margin-top: 0.5em; position: relative;
                max-height: var(--post-clamp, 45vh); overflow: hidden; }
     /* Feed content must never widen the page on small screens:
@@ -51,18 +66,18 @@
     .summary.unclamped { max-height: none; overflow: visible; }
     .summary.clamped::after {
         content: ""; position: absolute; left: 0; right: 0; bottom: 0;
-        height: 3em; background: linear-gradient(transparent, #fff);
+        height: 3em; background: linear-gradient(transparent, var(--bg));
     }
     .post.expanded .summary { max-height: none; overflow: visible; }
     .post.expanded .summary.clamped::after { display: none; }
     .expand-toggle { display: none; margin-top: 0.4em; padding: 0.15em 0.8em;
                      position: sticky; bottom: 0.75em; left: 0;
                      width: fit-content;
-                     border: 1px solid #ddd; border-radius: 1.25em;
-                     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-                     color: #06c; font-size: 0.85em; cursor: pointer; }
+                     border: 1px solid var(--line); border-radius: 1.25em;
+                     background: var(--bg); box-shadow: 0 1px 4px var(--shadow);
+                     color: var(--title); font-size: 0.85em; cursor: pointer; }
     .summary.clamped + .expand-toggle { display: block; }
-    .site-footer { margin-top: 2em; font-size: 0.8em; color: #999;
+    .site-footer { margin-top: 2em; font-size: 0.8em; color: var(--faint);
                    clear: both; }
     /* Feed sidebar: a real right column beside the post flow, not a
        float (a float would visually sit inside the first post's card).
@@ -78,8 +93,9 @@
     main.planet > .generated { grid-column: 1 / -1; }
     main.planet > .post-flow { grid-column: 1; }
     main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
-        padding: 0.75em 1em; border: 1px solid #ddd;
+        padding: 0.75em 1em; border: 1px solid var(--line);
         border-radius: 8px; font-size: 0.85em; }
+    .feeds-sidebar a { color: var(--title); }
     .feeds-sidebar h2 { margin: 0 0 0.5em; font-size: 1.1em; }
     .feeds-sidebar ul { margin: 0; padding-left: 1.2em; }
     .feeds-sidebar .feed-ref { font-size: 0.9em; }
@@ -106,7 +122,7 @@
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-18T12:30:19+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-19T10:29:23+00:00</span> ·
       <a class="feed-link" href="https://example.com/planet/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
     
@@ -132,9 +148,8 @@
         <div>
           <h1 class="post-title"><a class="post-link" href="http://example.org/2003/12/13/atom03">Atom-Powered Robots Run Amok</a></h1>
           <div class="post-meta">
-            <span class="feed-title">Atom test</span>
+            <span class="feed-title"><a href="example.org">Atom test</a></span>
             <span class="post-date">2003-12-13 18:30 UTC</span>
-            <span class="post-site"> · Site: <a href="example.org">example.org</a></span>
           </div>
         </div>
       </div>
@@ -150,9 +165,8 @@
         <div>
           <h1 class="post-title"><a class="post-link" href="http://example.org/item/1">First item title</a></h1>
           <div class="post-meta">
-            <span class="feed-title">RSS test</span>
+            <span class="feed-title"><a href="example.org">RSS test</a></span>
             <span class="post-date">2002-09-05 00:00 UTC</span>
-            <span class="post-site"> · Site: <a href="example.org">example.org</a></span>
           </div>
         </div>
       </div>
