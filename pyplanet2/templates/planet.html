@@ -21,7 +21,15 @@
             --line: #ddd;
             --muted:  color-mix(in srgb, var(--fg) 62%, var(--bg));
             --faint:  color-mix(in srgb, var(--fg) 46%, var(--bg));
-            --shadow: color-mix(in srgb, var(--fg) 15%, transparent); }
+            --shadow: color-mix(in srgb, var(--fg) 15%, transparent);
+            color-scheme: light dark; }
+    /* Automatic dark theme; output.css stylesheets load after this
+       block, so a plain :root in one applies in both modes, or a
+       matching media block here customizes dark mode only. */
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111;   --fg: #ddd;   --title: #6af;
+              --brand: #6af;   --line: #333; }
+    }
     body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
            max-width: 46em; margin: 0 auto; padding: 1em;
            background: var(--bg); color: var(--fg); line-height: 1.5; }

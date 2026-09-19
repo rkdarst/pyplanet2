@@ -199,6 +199,14 @@ The derived tiers (`--muted`, `--faint`, `--shadow`, `--link`) follow
 :root { --bg: #111; --fg: #ddd; --title: #6af; }
 ```
 
+The template also ships an **automatic dark theme**: when the
+visitor's browser prefers dark mode, the five core values swap via a
+`prefers-color-scheme` media block (`--bg: #111`, `--fg: #ddd`,
+`--title`/`--brand: #6af`, `--line: #333`) and the derived tiers
+follow.  Stylesheets listed under `output.css` load after it, so your
+own plain `:root` values apply in both modes; to customize dark mode
+only, define your own `prefers-color-scheme` media block.
+
 Note: do not name your own template `planet.html` inside
 `template_dir` if it also `{% extends "planet.html" %}` -- that
 resolves to itself; pick a distinct name.

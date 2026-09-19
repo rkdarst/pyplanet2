@@ -1,0 +1,57 @@
+/* Sample stylesheet for pyplanet2 -- NOT wired into any config.
+   To use it, list it under output.css in your config:
+
+     output:
+       css:
+         - style.css
+
+   Every value below is the built-in default, so adding this file
+   changes nothing; edit the values (or delete lines you do not
+   override -- anything unset keeps its default).
+
+   The derived tiers (muted, faint, shadow) recompute from
+   --fg/--bg, so in most cases you only ever need to set --bg,
+   --fg, --title and --brand.  Overriding a derived one is still
+   possible by declaring it with a plain value. */
+
+:root {
+  /* Core palette */
+  --bg:    #fff;   /* page background                          */
+  --fg:    #222;   /* body text                                */
+  --title: #06c;   /* post titles, sidebar links, expand       */
+  --brand: #06c;   /* site title next to the logo; matches     */
+                   /* --title by value, set independently      */
+
+  /* Default color of every link; post titles, sidebar and feed-name
+     links override it with --title or inherit; unset it to follow
+     --title.                                                    */
+  --link: var(--title);
+
+  /* Borders and placeholders (cards, sidebar, icon boxes)    */
+  --line: #ddd;
+
+  /* Derived tones -- the built-in definitions, for reference   */
+  --muted:  color-mix(in srgb, var(--fg) 62%, var(--bg));  /* ~#767676 */
+  --faint:  color-mix(in srgb, var(--fg) 46%, var(--bg));  /* ~#999    */
+  --shadow: color-mix(in srgb, var(--fg) 15%, transparent);
+
+  /* Height of a collapsed post before the fade and button     */
+  --post-clamp: 45vh;
+}
+
+/* Dark mode ships with the template (a prefers-color-scheme media
+   block setting the core values below).  Copy the block to give dark
+   mode your own colors; omit it to keep the built-in ones.  To
+   ignore the visitor's preference entirely, restate your light
+   values inside the block instead.  The derived tones always follow
+   the core values of whichever mode is active. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111;
+    --fg: #ddd;
+    --title: #6af;
+    --brand: #6af;
+    --line: #333;
+  }
+}
+
