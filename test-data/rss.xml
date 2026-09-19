@@ -47,5 +47,21 @@ nasty tricks&lt;/span&gt;
 <guid>http://example.org/guid/1</guid>
 <pubDate>Thu, 05 Sep 2002 0:00:01 GMT</pubDate>
 </item>
+<item>
+<title>Mixed Media Demo</title>
+<link>http://example.org/2002/09/04/mixed.html</link>
+<description>&lt;p&gt;A post mixing readable text with embedded media, to preview the
+&lt;em&gt;content not shown&lt;/em&gt; note the aggregator adds.&lt;/p&gt;
+&lt;p&gt;The video player below is dropped, so this post carries a warning
+listing the removed elements right under its title.&lt;/p&gt;
+&lt;video src="http://example.org/audio/demo-video.mp4" controls&gt;watch this clip&lt;/video&gt;
+&lt;svg width="60" height="60"&gt;&lt;circle cx="30" cy="30" r="20" fill="tomato"&gt;&lt;/circle&gt;&lt;/svg&gt;
+&lt;form&gt;&lt;input type="text" placeholder="newsletter"&gt;&lt;button type="submit"&gt;Sign up&lt;/button&gt;&lt;/form&gt;
+&lt;iframe src="http://example.org/player/embed"&gt;&lt;/iframe&gt;
+&lt;p&gt;Text and links like &lt;a href="http://example.org/notes"&gt;this one&lt;/a&gt;
+always survive the sanitizer untouched.&lt;/p&gt;</description>
+<guid>http://example.org/guid/3</guid>
+<pubDate>Wed, 04 Sep 2002 0:00:01 GMT</pubDate>
+</item>
 </channel>
 </rss>

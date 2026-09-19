@@ -156,6 +156,98 @@ def test_summaries_sanitized_once_for_all_outputs(tmp_path):
     assert "still-ok" in items[0]["summary"]
 
 
+LOSS_CASES = [
+    ("<video src='v.mp4'>play</video>", ["video"]),
+    ("<iframe src='https://v.example/x'></iframe>", ["iframe"]),
+    ("<svg width='4'><circle/></svg>", ["svg"]),
+    ("<form><input/></form>", ["form", "input"]),
+    ("plain <strong>text</strong> here", []),
+    ("<figure><figcaption>caption</figcaption></figure>", []),
+]
+
+
+@pytest.mark.parametrize("markup, flagged", LOSS_CASES)
+def test_removed_content_flag(tmp_path, markup, flagged):
+    """removed_content lists exactly the elements whose content the
+    sanitizer loses; text-carrying markup yields an empty list."""
+    escaped = (markup.replace("&", "&amp;").replace("<", "&lt;")
+               .replace(">", "&gt;"))
+    feed = tmp_path / "loss.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>t</title><link href="https://x.example/"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        f'<content type="html">{escaped}</content></entry></feed>',
+        encoding="utf-8")
+    items = fetch_all_items({"feeds": [{"feed": str(feed)}]})
+    assert items[0]["removed_content"] == flagged
+
+
+def test_script_style_bodies_dropped(tmp_path):
+    """bleach keeps the text of stripped tags, so script and style
+    bodies are removed wholesale instead of leaking as visible code."""
+    feed = tmp_path / "junk.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>t</title><link href="https://x.example/"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">'
+        '&lt;script&gt;alert(1)&lt;/script&gt; visible\n'
+        '&lt;style&gt;.x{color:red}&lt;/style&gt; text</content>'
+        '</entry></feed>', encoding="utf-8")
+    summary = fetch_all_items({"feeds": [{"feed": str(feed)}]})[0]["summary"]
+    assert "alert" not in summary and "color:red" not in summary
+    assert "visible" in summary and "text" in summary
+
+
+def test_removed_content_note_rendered(tmp_path):
+    """A post whose media was dropped gets the note under its title;
+    ordinary posts render without one."""
+    feed = tmp_path / "media.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>V</title><link href="https://x.example/v"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">&lt;video src="v.mp4"&gt;watch&lt;/video&gt;'
+        '</content></entry></feed>', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["feeds"] = [{"feed": str(feed), "name": "V"}]
+    generate_html_view(fetch_all_items(config),
+                       config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert 'class="content-note"' in page
+    assert "consider seeing the original post" in page
+    assert "(video)" in page
+    plain_view = str(tmp_path / "plain.html")
+    config2 = theming_config(tmp_path)
+    config2["output"] = dict(config2["output"], html_view=plain_view)
+    generate_html_view(fetch_all_items(config2),
+                       plain_view, TEMPLATE_DIR, config2)
+    page2 = Path(plain_view).read_text(encoding="utf-8")
+    assert 'class="content-note"' not in page2
+
+
+def test_removed_content_note_in_atom_feed(tmp_path):
+    """The aggregated Atom feed carries the same warning, prepended to
+    the entry, since many readers show only the feed."""
+    feed = tmp_path / "media.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>V</title><link href="https://x.example/v"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">&lt;p&gt;body&lt;/p&gt;'
+        '&lt;video src="v.mp4"&gt;&lt;/video&gt;</content>'
+        '</entry></feed>', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["feeds"] = [{"feed": str(feed), "name": "V"}]
+    generate_atom_feed(fetch_all_items(config),
+                       config["output"]["atom_feed"], config)
+    xml = Path(config["output"]["atom_feed"]).read_text(encoding="utf-8")
+    assert "consider seeing the original post" in xml
+    assert "(video)" in xml
+    assert xml.index("consider seeing") < xml.index("body")  # leads entry
+
+
 @pytest.mark.parametrize("shape", [
     "javascript:1",
     "javascript:alert(1)",

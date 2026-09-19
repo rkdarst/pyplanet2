@@ -58,6 +58,7 @@
     .post-title { margin: 0 0 0.25em; overflow-wrap: break-word; }
     .post-link { color: var(--title); text-decoration: none; }
     .post-meta { font-size: 0.85em; color: var(--muted); }
+    .content-note { margin: 0.25em 0 0; font-size: 0.85em; color: var(--muted); }
     .feed-title { font-weight: bold; }
     .feed-title a { color: inherit; }
     .summary { margin-top: 0.5em; position: relative;
@@ -191,6 +192,9 @@
             <span class="post-date">{{ item.date }}</span>
             {%- endblock %}
           </div>
+          {%- if item.removed_content %}
+          <p class="content-note">Some embedded content from this post is not shown here ({{ item.removed_content|join(", ") }}) - consider seeing the original post.</p>
+          {%- endif %}
         </div>
       </div>
       {%- block post_summary scoped %}

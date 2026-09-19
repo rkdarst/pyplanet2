@@ -15,6 +15,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 import bleach
@@ -206,13 +207,48 @@ _CLEANER = bleach.Cleaner(
 )
 
 
+
+# bleach keeps the inner text of stripped tags, so script/style bodies
+# (JS and CSS source, never readable prose) are dropped wholesale
+# before the cleaner runs.
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1>", re.I | re.S)
+
+# Elements whose content is lost, not merely re-rendered, when the
+# cleaner drops them: readers get a note instead of a silent hole.
+CONTENT_LOSS_TAGS = {"iframe", "video", "audio", "embed", "object",
+                     "applet", "canvas", "svg", "math", "form",
+                     "input", "button", "select"}
+
+
+class _LossScanner(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.found = set()
+
+    def handle_starttag(self, tag, attrs):
+        if tag in CONTENT_LOSS_TAGS:
+            self.found.add(tag)
+
+
+def lost_content_tags(html_text):
+    """The sorted names of elements the sanitizer will drop whole
+    (embedded media, widgets) from raw feed HTML; drives the "content
+    not shown" note in both output views."""
+    scanner = _LossScanner()
+    try:
+        scanner.feed(html_text or "")
+    except Exception:  # malformed markup: no note rather than a false one
+        pass
+    return sorted(scanner.found)
+
+
 def sanitize_html(text):
     """Sanitize feed-supplied HTML: tag/attribute allow-lists plus
     the url_scheme_filter scheme allow-list, applied once so every
     output enforces exactly the same policy."""
     if not text:
         return ""
-    return _CLEANER.clean(text)
+    return _CLEANER.clean(_SCRIPT_STYLE_RE.sub("", text))
 
 
 def content_or_summary(entry):
@@ -221,7 +257,8 @@ def content_or_summary(entry):
     feedparser mirrors content into summary only when the entry has no
     summary of its own; when both exist, summary holds just the short
     version, so the content blocks are checked first.  Both fields are
-    sanitized by feedparser's built-in HTML sanitizer.
+    feed-supplied HTML; sanitize_html() is the single enforcement point
+    (feeds are parsed with sanitize_html=False).
     """
     for block in entry.get("content", []):
         if block.get("value"):
@@ -274,9 +311,12 @@ def fetch_all_items(config):
     The item dicts are the internal contract between this function,
     localize_images() and the two generators below: "dt" (aware
     datetime), "feed_title", "site", "icon" (plain strings,
-    "" when unset), "title", "link" (scheme-checked by safe_link) and
-    "summary" (sanitized HTML) and "feed_id" (index of the feed in
-    the config).  localize_images() may add "img_map".
+    "" when unset), "title", "link" (scheme-checked by safe_link),
+    "summary" (sanitized HTML), "feed_id" (index of the feed in the
+    config) and "removed_content" (the sorted names of dropped
+    elements when the sanitizer lost content readers would miss,
+    empty when nothing was lost).  localize_images() may
+    add "img_map".
     """
     # Optional pool-wide age filter (0/unset = keep all ages); applies
     # to every output.  Undated posts fall back to epoch and thus age
@@ -297,7 +337,12 @@ def fetch_all_items(config):
         # prefer_summary: use the short Atom <summary> even when the
         # entry also carries full <content> (default: full text wins).
         prefer_summary = feed_config.get("prefer_summary", False)
-        feed = feedparser.parse(feed_url, resolve_relative_uris=not resolve_urls)
+        # feedparser's own sanitizer stays off: the bleach cleaner in
+        # sanitize_html() is the single policy point, and
+        # lost_content_tags() must see the raw markup.
+        feed = feedparser.parse(feed_url,
+                                resolve_relative_uris=not resolve_urls,
+                                sanitize_html=False)
         
         problem = _feed_problem(feed_url, feed)
         if problem:
@@ -324,6 +369,7 @@ def fetch_all_items(config):
             link = safe_link(entry.get("link", "#"))
             summary = (entry.get("summary", "") if prefer_summary
                        else content_or_summary(entry))
+            removed = lost_content_tags(summary)
             if resolve_urls:
                 summary = make_urls_absolute(summary, link)
             # Single sanitization point: feed-supplied HTML passes
@@ -343,6 +389,7 @@ def fetch_all_items(config):
                 "title": title,
                 "link": link,
                 "summary": summary,
+                "removed_content": removed,
             })
 
     # Sort by date, newest first
@@ -369,6 +416,14 @@ def generate_atom_feed(items, output_file, config):
         # readers cannot resolve relative paths, so images get the
         # absolute ("atom") cached copies when the image cache is on
         summary = rewrite_images(item["summary"], item.get("img_map"), "atom")
+        # The same "content not shown" note the HTML view renders,
+        # prepended so it leads the entry: feeds are read on their
+        # own, where no post-card context would carry the warning.
+        if item.get("removed_content"):
+            summary = ("<p>Some embedded content from this post is not "
+                       "shown here (" + ", ".join(item["removed_content"]) +
+                       ") - consider seeing the original post.</p>"
+                       + (summary or ""))
         feed.add_item(
             title=item["title"],
             link=item["link"],

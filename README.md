@@ -250,7 +250,10 @@ Feed content is treated as untrusted input.  Feed-supplied HTML in
 post summaries is sanitized once at fetch time -- scripts, event
 handler attributes and embeds such as `<iframe>` are stripped, and
 both the HTML view and the aggregated Atom feed enforce exactly the
-same policy.  Every `href`/`src` in summaries and every post link is
+same policy.  Embedded content the sanitizer cannot keep at all
+(video, audio, graphics such as SVG, forms) is detected by element
+type, and both output views then lead the post with a note naming
+the dropped elements -- a removed player is never a silent hole.  Every `href`/`src` in summaries and every post link is
 additionally checked against a scheme allow-list (http, https,
 relative URLs, mailto) using browser-equivalent URL cleaning, so
 malformed shapes like `java`+tab+`script:` cannot slip through;
