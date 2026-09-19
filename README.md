@@ -151,7 +151,7 @@ paths:
 {# themes/dark.html #}
 {% extends "planet.html" %}
 {% block styles %}{{ super() }}
-<style>body { background: #111; color: #ddd; }</style>
+<style>:root { --bg: #111; --fg: #ddd; --title: #6af; }</style>
 {% endblock %}
 {% block footer %}<footer>My planet &mdash; powered by pyplanet2</footer>{% endblock %}
 ```
@@ -173,6 +173,30 @@ default right-hand feed sidebar, which a theme can restyle or replace:
   <a href="{{ f.site }}">{{ f.title }}</a>
 {% endfor %}</aside>
 {% endblock %}
+```
+
+### Color palette
+
+Every visual default hangs off these CSS custom properties declared
+on `:root` in the base template; override them from an `output.css`
+stylesheet or a `styles` block -- no template needed:
+
+| Variable | Default | Used for |
+|---|---|---|
+| `--bg` / `--fg` | `#fff` / `#222` | page background / body text |
+| `--brand` | `#06c` | site title next to the logo (same default as `--title`, set separately) |
+| `--title` | `#06c` | post titles, sidebar links, expand buttons |
+| `--link` | `var(--title)` | default color for every link (post titles, sidebar and feed-name links override) |
+| `--line` | `#ddd` | card and sidebar borders, placeholders |
+| `--muted` / `--faint` | derived from `--fg`/`--bg` | meta lines, footer |
+| `--shadow` | derived from `--fg` | expand-button shadow |
+| `--post-clamp` | `45vh` | collapsed post height |
+
+The derived tiers (`--muted`, `--faint`, `--shadow`, `--link`) follow
+`--fg`/`--bg`/`--title` automatically, so a complete dark theme is:
+
+```css
+:root { --bg: #111; --fg: #ddd; --title: #6af; }
 ```
 
 Note: do not name your own template `planet.html` inside
