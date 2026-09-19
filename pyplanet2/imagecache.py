@@ -110,6 +110,19 @@ def make_urllib_fetcher(timeout=15, max_bytes=10 * 1024 * 1024):
     return fetch
 
 
+def _cache_settings(config, fetcher=None):
+    """(dir_name, cache_dir, ttl, base_url, fetcher) from the config."""
+    imgcfg = config.get("images") or {}
+    dir_name = str(imgcfg.get("dir", "images-cached")).rstrip("/")
+    ttl = timedelta(days=imgcfg.get("ttl_days", 1))
+    base_url = str(imgcfg.get("base_url")
+                   or config["site"]["site_url"]).rstrip("/")
+    if fetcher is None:
+        fetcher = make_urllib_fetcher(imgcfg.get("timeout", 15),
+                                      imgcfg.get("image_cache_max_bytes",
+                                                     10 * 1024 * 1024))
+    return dir_name, Path(dir_name), ttl, base_url, fetcher
+
 def _paths(file_name, dir_name, base_url):
     return {"html": f"{dir_name}/{file_name}",
             "atom": f"{base_url}/{dir_name}/{file_name}"}
@@ -188,6 +201,37 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
     return _paths(file_name, dir_name, base_url)
 
 
+def localize_site_image(url, config, fetcher=None):
+    """Cache one site-level image (e.g. a favicon); return a local path.
+
+    Local (non-URL) values are returned unchanged, to be used as
+    given.  A remote image too large for the cache is dropped (empty
+    return); other failures keep the original URL, like any image
+    the cache could not take.
+    """
+    if not url or not is_http_url(url):
+        return url
+    dir_name, cache_dir, ttl, base_url, fetcher = _cache_settings(
+        config, fetcher)
+    now = datetime.now(timezone.utc)
+    index = load_index(cache_dir)
+    paths = _fresh_paths(index.get(url) or {}, cache_dir, dir_name,
+                         base_url, now, ttl)
+    if paths is None:
+        try:
+            paths = _fetch_into_cache(url, index, cache_dir, dir_name,
+                                      base_url, now, fetcher)
+        except ImageTooLarge:
+            print(f"Warning: dropping oversized image, not cached: {url}")
+            return ""
+    if paths is not None:
+        save_index(cache_dir, index)
+        return paths["html"]
+    print(f"Warning: could not cache image, keeping remote URL: {url}")
+    return url
+
+
+
 def drop_large_images(items, large_urls):
     """Remove img tags for too-large images and flag the posts.
 
@@ -218,16 +262,8 @@ def localize_images(items, config, fetcher=None):
     the generators via rewrite_images(), and localized feed icons are
     rewritten in place (icons only appear in the HTML view).
     """
-    imgcfg = config.get("images") or {}
-    dir_name = str(imgcfg.get("dir", "images-cached")).rstrip("/")
-    cache_dir = Path(dir_name)
-    ttl = timedelta(days=imgcfg.get("ttl_days", 1))
-    base_url = str(imgcfg.get("base_url")
-                   or config["site"]["site_url"]).rstrip("/")
-    if fetcher is None:
-        fetcher = make_urllib_fetcher(imgcfg.get("timeout", 15),
-                                      imgcfg.get("image_cache_max_bytes",
-                                      10 * 1024 * 1024))
+    dir_name, cache_dir, ttl, base_url, fetcher = _cache_settings(
+        config, fetcher)
     now = datetime.now(timezone.utc)
     index = load_index(cache_dir)
 

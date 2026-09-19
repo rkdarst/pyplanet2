@@ -24,7 +24,7 @@ import yaml
 from feedgenerator import Atom1Feed
 from jinja2 import Environment, FileSystemLoader
 
-from .imagecache import localize_images, rewrite_images
+from .imagecache import localize_images, localize_site_image, rewrite_images
 
 def load_config(path):
     """Load configuration from a YAML file."""
@@ -488,6 +488,7 @@ def generate_html_view(items, output_file, template_dir, config):
         site_title=config["site"]["title"],
         css_files=config["output"].get("css", []),
         logo=config["output"].get("logo", ""),
+        favicon=config["output"].get("favicon", ""),
         atom_feed_url=config["site"]["atom_feed_url"]
     )
 
@@ -511,6 +512,10 @@ def main(argv=None):
     if config.get("images"):
         print("Localizing feed images...")
         localize_images(items, config)
+
+    favicon = config["output"].get("favicon", "")
+    if favicon:
+        config["output"]["favicon"] = localize_site_image(favicon, config)
 
     print("Generating Atom feed...")
     generate_atom_feed(items, config["output"]["atom_feed"], config)

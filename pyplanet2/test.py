@@ -723,3 +723,46 @@ def test_large_images_dropped_not_remote(tmp_path):
     assert fine in items[0]["img_map"]
     assert items[0]["img_map"][fine]["html"].endswith(".png")
     assert (tmp_path / "images-cached").is_dir()  # the fine one was cached
+
+
+def test_favicon_renders_link(tmp_path):
+    """Favicon: unset renders no link tag; a local path appears verbatim."""
+    config = theming_config(tmp_path)
+    generate_html_view([], config["output"]["html_view"], TEMPLATE_DIR,
+                       config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert 'rel="icon"' not in page
+    config["output"]["favicon"] = "my-icon.png"
+    generate_html_view([], config["output"]["html_view"], TEMPLATE_DIR,
+                       config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert '<link rel="icon" href="my-icon.png">' in page
+
+
+def test_site_image_caching(tmp_path):
+    """localize_site_image: local verbatim, remote cached, oversized
+    dropped, unreachable keeps its URL."""
+    from pyplanet2.imagecache import localize_site_image, ImageTooLarge
+
+    def ok(u, headers):
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    got = localize_site_image("https://img.example/icon.png",
+                              img_config(tmp_path), fetcher=ok)
+    assert got.endswith(".png") and Path(got).is_file()
+
+    def huge(u, headers):
+        raise ImageTooLarge("oversized")
+
+    assert localize_site_image("https://img.example/big.png",
+                               img_config(tmp_path),
+                               fetcher=huge) == ""
+
+    def boom(u, headers):
+        raise OSError("network down")
+
+    keep = "https://img.example/down.png"
+    assert localize_site_image(keep, img_config(tmp_path),
+                               fetcher=boom) == keep
+    assert localize_site_image("local.ico",
+                               img_config(tmp_path)) == "local.ico"

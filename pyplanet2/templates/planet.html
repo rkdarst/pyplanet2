@@ -9,6 +9,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_title }}{% endblock %}</title>
   <link rel="alternate" type="application/atom+xml" title="{{ site_title }} Atom feed" href="{{ atom_feed_url }}">
+  {% if favicon %}<link rel="icon" href="{{ favicon }}">{% endif %}
   {%- block styles %}
   <style>
     /* Theme palette: override these in an output.css stylesheet or a

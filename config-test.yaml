@@ -12,7 +12,8 @@ output:
   atom_feed: "atom.xml"
   html_view: "planet.html"
   css: []
-  logo: ""    # optional logo image path/URL for the HTML view
+  logo: "static/favicon.ico"    # optional logo image path/URL for the HTML view
+  favicon: static/favicon.ico
 
 # Item limits
 limits:

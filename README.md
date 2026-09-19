@@ -106,6 +106,8 @@ output:
                                     # URLs) added after the built-in styling
   # logo: "logo.png"                # optional: header image; its height is
                                     # capped, never upscaled, width is free
+  # favicon: "favicon.ico"          # optional: browser tab icon; a local
+                                    # file used as given, or a URL to cache
 
 # Item limits
 limits:
@@ -168,7 +170,7 @@ Overridable blocks: `title`, `styles`, `head_extra`, `header`,
 `post_summary`, `sidebar` (right-side feed list), `footer`, `scripts`.
 The four `post*` blocks are `scoped`, so `item` is available in them.
 A template that does not `extends` replaces the page completely.
-Variables: `site_title`, `atom_feed_url`, `generated_at`, `logo`,
+Variables: `site_title`, `atom_feed_url`, `generated_at`, `logo`, `favicon`,
 `css_files`, `posts` (each with `title`, `link`, `date`, `feed_title`,
 `site`, `icon`, `summary`) and `feeds` (every configured feed as
 `title`/`feed`/`site`/`icon`); the base template uses it for the
@@ -246,7 +248,10 @@ scripts when served same-origin), and any failure simply keeps the
 original remote URL, so image problems never break a build.  Images
 over `image_cache_max_bytes` are the one exception: they are dropped from the post
 entirely and listed as `large image` in the content note, rather than
-left to leak visitor requests to the remote host.
+left to leak visitor requests to the remote host.  The site favicon
+(`output.favicon`) is cached even without an `images` section; local
+files given in config (`favicon`, `logo`, feed `icon`) are referenced
+as written, so the deployment must provide them.
 
 The SSRF guard blocks non-http(s) schemes and literal private or
 loopback addresses and re-checks every redirect hop, but hostnames
