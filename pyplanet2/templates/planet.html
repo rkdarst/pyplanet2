@@ -95,7 +95,9 @@
     /* Feed sidebar: a real right column beside the post flow, not a
        float (a float would visually sit inside the first post's card).
        The grid engages via :has() only when a sidebar is rendered, so
-       the posts keep the full width without one. */
+       the posts keep the full width without one.  It deliberately
+       scrolls with the page (no sticky): its information is repeated
+       in the meta line of every post. */
     main.planet:has(> .feeds-sidebar) { display: grid;
         grid-template-columns: minmax(0, 1fr) 13em;
         column-gap: 1.5em; align-items: start; }
@@ -112,9 +114,6 @@
     .feeds-sidebar h2 { margin: 0 0 0.5em; font-size: 1.1em; }
     .feeds-sidebar ul { margin: 0; padding-left: 1.2em; }
     .feeds-sidebar .feed-ref { font-size: 0.9em; }
-    @media (min-width: 42.01em) {
-      main.planet > .feeds-sidebar { position: sticky; top: 1em; }
-    }
     @media (max-width: 42em) {
       main.planet:has(> .feeds-sidebar) { grid-template-columns: 1fr; }
       main.planet > .feeds-sidebar { grid-column: 1; grid-row: auto; }
