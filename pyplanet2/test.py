@@ -697,3 +697,28 @@ def test_fetcher_refuses_private_hosts():
                 "ftp://example.org/a.png"):
         with pytest.raises(ValueError):
             fetch(url, {})
+
+
+def test_large_images_dropped_not_remote(tmp_path):
+    """Images over the size cap are removed from the post, flagged in
+    removed_content, and never left pointing at the remote host."""
+    from pyplanet2.imagecache import ImageTooLarge
+    huge = "https://img.example/huge.png"
+    fine = "https://img.example/ok.png"
+
+    def fetch(u, headers):
+        if u == huge:
+            raise ImageTooLarge("image exceeds 10485760 bytes: " + u)
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    items = [{"summary": f'<p>t</p><img src="{huge}" alt="x">'
+                          f'<img src="{fine}">',
+              "icon": huge, "removed_content": ["video"]}]
+    localize_images(items, img_config(tmp_path), fetcher=fetch)
+    assert huge not in items[0]["summary"]
+    assert items[0]["icon"] == ""
+    assert items[0]["removed_content"] == ["large image", "video"]
+    # the fine one is cached and mapped for the generators to rewrite
+    assert fine in items[0]["img_map"]
+    assert items[0]["img_map"][fine]["html"].endswith(".png")
+    assert (tmp_path / "images").is_dir()  # the fine one was cached

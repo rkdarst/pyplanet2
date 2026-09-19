@@ -8,9 +8,11 @@ and repeat runs are cheap: entries younger than ttl_days are not
 touched at all, older ones are revalidated with a conditional request
 that transfers nothing when the image is unchanged.
 
-Safety rules: only http(s) URLs; no localhost/private-IP hosts; a size
-cap applied while streaming; the response must be an image/* content
-type; and file names are pure content-hash-derived, so no URL can ever
+Safety rules: only http(s) URLs; no localhost/private-IP hosts;
+images over the size cap (default 10 MB) are dropped from the
+output and listed as "large image" instead of being left pointing at
+the remote host (visitor requests would leak there); the response
+must be an image/* content type; and file names are pure content-hash-derived, so no URL can ever
 escape the cache directory.  image/svg+xml is deliberately not
 localized: an SVG served from your own origin could run scripts.
 Anything that fails keeps its original remote URL, so the build never
@@ -36,6 +38,10 @@ SRC_ATTR_RE = re.compile(r'src="([^"]*)"')
 # Only hash-derived file names are ever trusted from the cache index.
 SAFE_NAME_RE = re.compile(r"\A[0-9a-f]{16}\.[a-z0-9]{1,5}\Z")
 USER_AGENT = "pyplanet2/1.0 (blog aggregator)"
+
+
+class ImageTooLarge(ValueError):
+    """Raised by fetchers when a response exceeds max_bytes."""
 
 
 def is_http_url(url):
@@ -78,7 +84,7 @@ class _SafeRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def make_urllib_fetcher(timeout=15, max_bytes=5 * 1024 * 1024):
+def make_urllib_fetcher(timeout=15, max_bytes=10 * 1024 * 1024):
     """Default fetcher: fetcher(url, headers) -> (status, body, headers).
 
     Response header keys are lower-cased; body is empty for 304s.
@@ -98,7 +104,7 @@ def make_urllib_fetcher(timeout=15, max_bytes=5 * 1024 * 1024):
                 return 304, b"", {k.lower(): v for k, v in err.headers.items()}
             raise
         if len(body) > max_bytes:
-            raise ValueError(f"image exceeds {max_bytes} bytes: {url}")
+            raise ImageTooLarge(f"image exceeds {max_bytes} bytes: {url}")
         return status, body, resp_headers
 
     return fetch
@@ -153,6 +159,8 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
         headers["If-Modified-Since"] = entry["last_modified"]
     try:
         status, body, resp_headers = fetcher(url, headers)
+    except ImageTooLarge:
+        raise  # caller drops the image and flags the post
     except Exception:
         return None
     now_iso = now.isoformat(timespec="seconds")
@@ -180,6 +188,29 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
     return _paths(file_name, dir_name, base_url)
 
 
+def drop_large_images(items, large_urls):
+    """Remove img tags for too-large images and flag the posts.
+
+    Flagged posts list "large image" in removed_content, so both
+    output views note it; a too-large feed icon falls back to the
+    placeholder box.
+    """
+    for item in items:
+        summary = item.get("summary") or ""
+        lost = False
+        for url in large_urls:
+            summary, hits = re.subn(
+                f'<img[^>]*src="{re.escape(url)}"[^>]*>', "", summary)
+            lost = lost or bool(hits)
+        if item.get("icon") in large_urls:
+            item["icon"] = ""
+            lost = True
+        if lost:
+            item["removed_content"] = sorted(
+                set(item.get("removed_content") or []) | {"large image"})
+        item["summary"] = summary
+
+
 def localize_images(items, config, fetcher=None):
     """Download all item images into the cache dir and attach img_map.
 
@@ -195,7 +226,8 @@ def localize_images(items, config, fetcher=None):
                    or config["site"]["site_url"]).rstrip("/")
     if fetcher is None:
         fetcher = make_urllib_fetcher(imgcfg.get("timeout", 15),
-                                      imgcfg.get("max_bytes", 5 * 1024 * 1024))
+                                      imgcfg.get("image_cache_max_bytes",
+                                      10 * 1024 * 1024))
     now = datetime.now(timezone.utc)
     index = load_index(cache_dir)
 
@@ -207,14 +239,23 @@ def localize_images(items, config, fetcher=None):
             urls.add(item["icon"])
 
     mapping = {}
+    large_urls = set()
     for url in sorted(urls):
         entry = index.get(url) or {}
         paths = _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl)
         if paths is None:
-            paths = _fetch_into_cache(url, index, cache_dir, dir_name,
-                                      base_url, now, fetcher)
+            try:
+                paths = _fetch_into_cache(url, index, cache_dir, dir_name,
+                                          base_url, now, fetcher)
+            except ImageTooLarge:
+                # Too big to cache; leaving it remote would leak
+                # visitor requests, so it gets dropped instead.
+                large_urls.add(url)
         if paths is not None:
             mapping[url] = paths
+
+    if large_urls:
+        drop_large_images(items, large_urls)
 
     if urls:
         save_index(cache_dir, index)
