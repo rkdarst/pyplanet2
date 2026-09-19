@@ -5,6 +5,13 @@ This is a blog aggregator that takes a list of RSS/Atom feeds
 When I looked in 2026, I couldn't find any easy to install planet
 software in Python, so I created this.
 
+RSS/Atom feeds provide a way to syndicate blogs, news, and so on
+without big tech platforms mediating our interactions.  They used to
+be common, and now not so much - but they should probably come back.
+People can make blogs with feeds either on various platforms or as a
+static website, and there are various feed readers, either services
+your can use or self-hosted.
+
 Features:
 
 * Installation as a pip package, run via `pyplanet2 config.yaml`
@@ -13,8 +20,8 @@ Features:
 * Easy usage by Github Pages and similar.
 * Extensive HTML sanitization (should err on the side of caution, but
   it is AI-generated so please report problems you notice)
-* Caching images for privacy and to reduce web traffic of feeds
-  (this is a bit fragile, validate it works for each feed).
+* Caching images for privacy and to reduce web traffic of upstream
+  feeds (this is a bit fragile, validate it works for each feed).
 * Templating with jinja2 and custom CSS may be inserted which should
   allow you to override any config.  Note the config and format may
   not be very stable right now.
