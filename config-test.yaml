@@ -32,9 +32,14 @@ feeds:
   - feed: "test-data/atom.xml"
     name: "Atom test"
     site: "example.org"
-    icon: "https://example.org/atom-icon.png"
+    icon: "https://raw.githubusercontent.com/rkdarst/pyplanet2/refs/heads/master/static/icon-remote.png"
 
   - feed: "test-data/rss.xml"
     name: "RSS test"
+    site: "example.org"
+    icon: "static/icon.png"
+
+  - feed: "test-data/atom-relative.xml"
+    name: "ATOM relative test"
     site: "example.org"
     icon: "static/icon.png"
