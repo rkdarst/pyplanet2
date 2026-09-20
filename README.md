@@ -12,6 +12,12 @@ People can make blogs with feeds either on various platforms or as a
 static website, and there are various feed readers, either services
 your can use or self-hosted.
 
+Examples:
+
+* [Test planet (from this repo)](https://rkdarst.github.io/pyplanet2/)
+* [Nordic-RSE](https://rkdarst.github.io/nordic-rse-planet/) (good
+  example to copy)
+
 Features:
 
 * Installation as a pip package, run via `pyplanet2 config.yaml`
@@ -258,9 +264,12 @@ feeds, an image whose URL moved and one the build can no longer reach
 all stop taking up room instead of accumulating there forever -- the
 TTL is also how long an image survives a feed whose download failed
 once.  Copies the published page actually links are never deleted,
-whatever their age, and the deploy runs with `clean: true` so the
-deletions reach the branch: without it the next run's restore step
-would fetch every one of them straight back.
+whatever their age.  The deploy step leaves `keep_files` at its default
+of `false`, and that is what makes the deletions reach the branch: the
+action then removes the files in the Pages branch that the publish
+directory no longer has.  Setting it to `true` would leave the pruned
+images on the branch for the next run's restore step to fetch straight
+back.
 
 ```yaml
 images:
