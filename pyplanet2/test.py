@@ -4,12 +4,13 @@ Run from the repository root with:  pytest
 
 All tests are offline: they only read the sample feeds in test-data/.
 """
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
@@ -743,7 +744,7 @@ def test_localize_downloads_and_rewrites(tmp_path):
     cached = [p for p in (tmp_path / "images-cached").iterdir()
             if p.suffix == ".png"]
     assert cached and cached[0].read_bytes() == b"PNGDATA"
-    assert len(cached[0].stem) == 16  # hash-only file name
+    assert len(cached[0].stem) == 16  # the file name is a content digest
 
 
 def test_localize_skips_fresh_cache(tmp_path):
@@ -1199,3 +1200,183 @@ def test_trusted_name_matches_only_the_writers_output():
                  "0123456789abcdef.htm", "0123456789abcdef.PNG",
                  "z123456789abcdef.png", "../../etc/passwd", ""):
         assert not imagecache._trusted_name(name)
+
+
+# --- cache naming and pruning ---------------------------------------------
+
+def _cache_files(cache_dir):
+    return sorted(p.name for p in cache_dir.iterdir() if p.is_file())
+
+
+def _seed_cache(cache_dir, entries):
+    """Write a cache directory holding {url: (file_name, age_in_seconds)}."""
+    cache_dir.mkdir()
+    index = {}
+    for url, (file_name, age) in entries.items():
+        (cache_dir / file_name).write_bytes(b"PNG-" + file_name.encode())
+        fetched = datetime.now(timezone.utc) - timedelta(seconds=age)
+        index[url] = {"file": file_name,
+                      "fetched_at": fetched.isoformat(timespec="seconds")}
+    (cache_dir / "index.json").write_text(json.dumps(index), encoding="utf-8")
+
+
+def test_image_files_are_named_by_their_content(tmp_path):
+    """A file name digests the image bytes: the same image two feeds
+    name lands on one file, and nothing about the url shapes it."""
+    urls = ["https://a.example/logo.png", "https://b.example/logo.png"]
+    items = [{"summary": "".join(f'<img src="{u}">' for u in urls),
+              "icon": ""}]
+
+    def same_bytes(u, headers):
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    localize_images(items, img_config(tmp_path), fetcher=same_bytes)
+    mapping = items[0]["img_map"]
+    assert mapping[urls[0]] == mapping[urls[1]]  # deduplicated
+    name = hashlib.sha256(b"PNGDATA").hexdigest()[:16] + ".png"
+    assert mapping[urls[0]]["html"].endswith(name)
+    assert _cache_files(tmp_path / "images-cached") == [name, "index.json"]
+
+
+def test_changed_image_gets_a_new_name_and_the_old_one_is_pruned(tmp_path):
+    """New bytes arriving under a new name is what busts the browser
+    caches a url-derived name would leave serving the stale copy, and
+    the file the old name had goes as soon as nothing refers to it."""
+    url = "https://img.example/a.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    cache = tmp_path / "images-cached"
+
+    def old_bytes(u, headers):
+        return 200, b"OLD", {"content-type": "image/png"}
+
+    localize_images(items, img_config(tmp_path), fetcher=old_bytes)
+    old_file = cache / items[0]["img_map"][url]["html"].rsplit("/", 1)[1]
+    assert old_file.read_bytes() == b"OLD"
+
+    def new_bytes(u, headers):
+        return 200, b"NEW", {"content-type": "image/png"}
+
+    # ttl_days=0 so the entry the first run just wrote counts as stale
+    localize_images(items, img_config(tmp_path, ttl_days=0), fetcher=new_bytes)
+    new_file = cache / items[0]["img_map"][url]["html"].rsplit("/", 1)[1]
+    assert new_file != old_file and new_file.read_bytes() == b"NEW"
+    assert imagecache.prune_cache(img_config(tmp_path)) == (0, 1)
+    assert not old_file.exists() and new_file.exists()
+
+
+def test_prune_forgets_expired_entries_nobody_referenced(tmp_path):
+    """A build touches every image it still publishes, which is what
+    keeps an entry young: one past the TTL is an image nothing refers to
+    any more, so it leaves the index and its file leaves the disk."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {
+        "https://gone.example/a.png": ("0123456789abcdef.png", 3 * 86400),
+        "https://used.example/b.png": ("fedcba9876543210.png", 0),
+    })
+
+    def never(u, headers):
+        raise AssertionError("a fresh entry must not be asked for again")
+
+    items = [{"summary": '<img src="https://used.example/b.png">', "icon": ""}]
+    localize_images(items, img_config(tmp_path), fetcher=never)
+    assert imagecache.prune_cache(img_config(tmp_path)) == (1, 1)
+    assert _cache_files(cache) == ["fedcba9876543210.png", "index.json"]
+    assert list(json.loads((cache / "index.json").read_text())) == [
+        "https://used.example/b.png"]
+
+
+def test_prune_gives_a_recently_unused_image_its_ttl_of_grace(tmp_path):
+    """An entry nobody referred to this run survives while it is young,
+    so one build whose feed failed to load does not empty the cache."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {"https://gone.example/a.png":
+                        ("0123456789abcdef.png", 6 * 3600)})
+    assert imagecache.prune_cache(img_config(tmp_path, ttl_days=1)) == (0, 0)
+    assert _cache_files(cache) == ["0123456789abcdef.png", "index.json"]
+
+
+def test_prune_keeps_what_the_run_just_revalidated(tmp_path):
+    """A build with a ttl_days of 0 finds everything it publishes
+    expired, so pruning is told which copies the output links and keeps
+    exactly those: it must not delete the files being published."""
+    url = "https://img.example/a.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+
+    def first(u, headers):
+        return 200, b"PNG", {"content-type": "image/png", "etag": '"v1"'}
+
+    localize_images(items, img_config(tmp_path), fetcher=first)
+    seen = []
+
+    def not_modified(u, headers):
+        seen.append(headers)
+        return 304, b"", {}
+
+    localize_images(items, img_config(tmp_path, ttl_days=0), fetcher=not_modified)
+    assert seen and seen[0].get("If-None-Match") == '"v1"'  # it did revalidate
+    cached = items[0]["img_map"][url]["html"]
+    assert imagecache.prune_cache(img_config(tmp_path, ttl_days=0),
+                                  set(items[0]["img_map"])) == (0, 0)
+    assert (tmp_path / cached).is_file()  # what the page points at survives
+
+
+def test_prune_spared_linked_images_still_ages_the_rest_out(tmp_path):
+    """One call, both rules: an ancient image the output links survives,
+    an ancient one nothing links goes, file and all."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {
+        "https://kept.example/a.png": ("0123456789abcdef.png", 30 * 86400),
+        "https://gone.example/b.png": ("fedcba9876543210.png", 30 * 86400),
+    })
+    assert imagecache.prune_cache(img_config(tmp_path, ttl_days=0),
+                                  {"https://kept.example/a.png"}) == (1, 1)
+    assert _cache_files(cache) == ["0123456789abcdef.png", "index.json"]
+
+
+def test_prune_keeps_a_file_another_entry_still_names(tmp_path):
+    """Two entries can name one file once content deduplicates them, so
+    forgetting one of them must not delete what the other still points
+    at."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {
+        "https://a.example/x.png": ("0123456789abcdef.png", 3 * 86400),
+        "https://b.example/x.png": ("0123456789abcdef.png", 0),
+    })
+    assert imagecache.prune_cache(img_config(tmp_path)) == (1, 0)
+    assert (cache / "0123456789abcdef.png").read_bytes() == b"PNG-0123456789abcdef.png"
+
+
+def test_prune_removes_only_names_the_writer_could_have_made(tmp_path):
+    """Deletion comes from scanning the directory, and only a name this
+    writer could have produced is ever removed: its own side files, any
+    extension it cannot write, a directory and anything a person placed
+    here all stay where they are."""
+    cache = tmp_path / "images-cached"
+    cache.mkdir()
+    (cache / "index.json").write_text("{}", encoding="utf-8")
+    (cache / "0123456789abcdef.png").write_bytes(b"PNG")  # ours, unreferenced
+    (cache / "aabbccddeeff0011.png.part").write_bytes(b"PNG")  # a write in flight
+    (cache / "index.tmp").write_text("{}", encoding="utf-8")
+    (cache / "cafebabecafebabe.html").write_text("x", encoding="utf-8")
+    (cache / "notes.txt").write_text("mine", encoding="utf-8")
+    (cache / "deadbeefdeadbeef.png").mkdir()  # a directory is not a cache file
+    assert imagecache.prune_cache(img_config(tmp_path)) == (0, 1)
+    assert not (cache / "0123456789abcdef.png").exists()
+    for kept in ("aabbccddeeff0011.png.part", "index.tmp", "index.json",
+                 "cafebabecafebabe.html", "notes.txt", "deadbeefdeadbeef.png"):
+        assert (cache / kept).exists(), kept
+
+
+def test_prune_never_breaks_a_build(tmp_path, capsys):
+    """No cache directory yet is ordinary.  An index that exists and
+    will not parse is not: read as an empty one it would cost every
+    cached image, so pruning stands down instead."""
+    assert imagecache.prune_cache(img_config(tmp_path)) == (0, 0)  # none yet
+    cache = tmp_path / "images-cached"
+    cache.mkdir()
+    (cache / "0123456789abcdef.png").write_bytes(b"PNG")
+    for broken in ("{ not json", '["an index is a mapping"]'):
+        (cache / "index.json").write_text(broken, encoding="utf-8")
+        assert imagecache.prune_cache(img_config(tmp_path)) == (0, 0)
+    assert (cache / "0123456789abcdef.png").exists()  # not one file removed
+    assert "not pruning" in capsys.readouterr().out

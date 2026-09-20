@@ -6,11 +6,15 @@ rewrites the references to the local copies.  Visitors then never load
 images from the feed hosts (privacy), posts survive upstream link rot,
 and repeat runs are cheap: entries younger than ttl_days are not
 touched at all, older ones are revalidated with a conditional request
-that transfers nothing when the image is unchanged.
+that transfers nothing when the image is unchanged.  The same window
+also bounds how large the cache grows: an entry nothing in the build
+referred to is forgotten once it passes the TTL, and prune_cache() then
+removes every file the index no longer names.
 
 Safety rules: only http(s) URLs; no localhost/private-IP hosts; the
-response must be an image/* content type; and file names are pure
-content-hash-derived, so no URL can ever escape the cache directory.
+response must be an image/* content type; and file names are digests of
+the image bytes, so no URL can ever escape the cache directory and the
+same image named by two feeds is stored once.
 
 Two kinds of image are dropped from the post instead of being kept,
 each listed in removed_content so both output views note it, because
@@ -32,7 +36,10 @@ url stays as written, which is the documented opt-out.
 TRUSTED INPUT: the cache directory and its index.json are read as
 trusted input -- restore them only from a source you control.
 _trusted_name() limits what the index is allowed to name, as defense
-in depth, but it is not a sandbox.
+in depth, but it is not a sandbox.  prune_cache() deletes by scanning
+the directory for names this writer could have produced rather than by
+obeying the paths the index mentions, so an index cannot aim a removal
+anywhere.
 """
 import hashlib
 import ipaddress
@@ -237,11 +244,18 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
     ext = IMAGE_EXT.get(content_type)  # also drops unknown types
     if not ext:
         return None
-    file_name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16] + "." + ext
+    # The name digests the bytes, not the url: the same image served by
+    # two feeds lands on one file, and an image that changed gets a new
+    # name -- which is what busts the browser caches a url-derived name
+    # would leave serving the stale copy forever.  The file the old name
+    # had becomes unreferenced, and prune_cache() takes it away.
+    file_name = hashlib.sha256(body).hexdigest()[:16] + "." + ext
     cache_dir.mkdir(parents=True, exist_ok=True)
-    tmp = cache_dir / (file_name + ".part")
-    tmp.write_bytes(body)
-    tmp.replace(cache_dir / file_name)
+    final = cache_dir / file_name
+    if not final.is_file():  # deduplicated: identical bytes, one write
+        tmp = cache_dir / (file_name + ".part")
+        tmp.write_bytes(body)
+        tmp.replace(final)
     index[url] = {"file": file_name, "etag": resp_headers.get("etag"),
                   "last_modified": resp_headers.get("last-modified"),
                   "fetched_at": now_iso}
@@ -377,3 +391,79 @@ def rewrite_images(text, img_map, kind):
     for url, paths in img_map.items():
         text = text.replace(f'src="{url}"', f'src="{paths[kind]}"')
     return text
+
+
+def _pruning_index(cache_dir):
+    """The cache index, or None when it is there but cannot be read.
+
+    A missing index means an empty cache, which is ordinary.  An index
+    that exists and will not parse is not: pruning on the strength of
+    the empty dict load_index() falls back to would take every cached
+    image away because of one corrupt file, so the pass is skipped.
+    """
+    try:
+        index = json.loads((cache_dir / "index.json").read_text("utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return index if isinstance(index, dict) else None
+
+
+def prune_cache(config, touched=()):
+    """Forget entries the TTL expired, then the files none of them names.
+
+    ``touched`` is the set of urls this build referred to and got a
+    cached copy for -- the images its own output will link -- and those
+    are never forgotten, whatever their age: the rule is that pruning
+    removes what nothing pointed at, and a ttl_days of 0 would otherwise
+    have this pass delete the files the build is publishing.  Of the
+    rest, an entry is kept while it is within the TTL, which is also how
+    long a cached image outlives a feed that failed to load -- the grace
+    one bad build should not cost it.  An entry whose revalidation keeps
+    failing is left to age out the same way, its file going with it.
+
+    Deletion works from what is on the disk and never from the file
+    values the index holds, and only names _trusted_name() accepts are
+    removed: index.json, its .part and .tmp companions, any extension
+    this writer could not have produced, and anything a person placed
+    here are all left where they are.  Pruning never fails a build.
+    Returns (entries forgotten, files removed).
+    """
+    _dir, cache_dir, ttl, _base, _fetcher = _cache_settings(config)
+    if not cache_dir.is_dir():
+        return 0, 0
+    index = _pruning_index(cache_dir)
+    if index is None:
+        print("Warning: the cache index will not parse, not pruning")
+        return 0, 0
+
+    now = datetime.now(timezone.utc)
+    kept, dropped = {}, 0
+    for url, entry in index.items():
+        if url in touched:
+            kept[url] = entry  # the build points at this one: never prune it
+            continue
+        try:
+            if now - datetime.fromisoformat(entry["fetched_at"]) <= ttl:
+                kept[url] = entry
+                continue
+        except (KeyError, TypeError, ValueError):
+            pass  # no usable age counts as expired, as _fresh_paths agrees
+        dropped += 1
+
+    named = {entry.get("file") for entry in kept.values()}
+    removed = 0
+    for path in sorted(cache_dir.iterdir()):
+        if path.name in named or not _trusted_name(path.name):
+            continue
+        try:
+            if path.is_file():
+                path.unlink()
+                removed += 1
+        except OSError as exc:  # a stuck file must not stop a build
+            print(f"Warning: could not remove {path}: {exc}")
+
+    if kept != index:
+        save_index(cache_dir, kept)
+    return dropped, removed

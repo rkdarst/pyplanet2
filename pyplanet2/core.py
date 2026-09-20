@@ -24,7 +24,8 @@ import yaml
 from feedgenerator import Atom1Feed
 from jinja2 import Environment, FileSystemLoader
 
-from .imagecache import localize_images, localize_site_image, rewrite_images
+from .imagecache import (localize_images, localize_site_image, prune_cache,
+                         rewrite_images)
 
 def load_config(path):
     """Load configuration from a YAML file."""
@@ -550,11 +551,18 @@ def localize_site_assets(config, fetcher=None):
     visitor to load.  Stylesheets (``output.css``) are deliberately not
     fetched at all -- those are loaded by the visitor from wherever the
     config points, and a config is trusted input.
+
+    Returns the urls whose copy the page will link, the set prune_cache()
+    must therefore keep whatever its age.
     """
+    touched = set()
     for key in ("favicon", "logo"):
-        if config["output"].get(key):
-            config["output"][key] = localize_site_image(
-                config["output"][key], config, fetcher)
+        url = config["output"].get(key)
+        if url:
+            config["output"][key] = localize_site_image(url, config, fetcher)
+            if config["output"][key]:
+                touched.add(url)
+    return touched
 
 
 def main(argv=None):
@@ -570,11 +578,20 @@ def main(argv=None):
     items = fetch_all_items(config)
     print(f"Total items fetched: {len(items)}")
 
+    touched = set()
     if config.get("images"):
         print("Localizing feed images...")
-        localize_images(items, config)
+        touched |= set(localize_images(items, config))
 
-    localize_site_assets(config)
+    touched |= localize_site_assets(config)
+
+    # Pruning last, and told what the two passes above kept a copy for:
+    # the images the output is about to link are never deleted, whatever
+    # their age, so a build cannot cut the ground out from under itself.
+    dropped, removed = prune_cache(config, touched)
+    if dropped or removed:
+        print(f"Pruned {dropped} expired entries and {removed} unreferenced "
+              "files from the image cache")
 
     print("Generating Atom feed...")
     generate_atom_feed(items, config["output"]["atom_feed"], config)

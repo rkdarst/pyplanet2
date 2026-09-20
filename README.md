@@ -251,18 +251,32 @@ via the deployed `gh-pages` branch: entries younger than `ttl_days`
 are not touched at all, older ones are revalidated with a conditional
 request that transfers nothing when the image is unchanged.
 
+That window also bounds how large the cache grows.  Whatever the build
+did not refer to is forgotten once it passes `ttl_days`, and the files
+the index no longer names are deleted with it, so a post that left the
+feeds, an image whose URL moved and one the build can no longer reach
+all stop taking up room instead of accumulating there forever -- the
+TTL is also how long an image survives a feed whose download failed
+once.  Copies the published page actually links are never deleted,
+whatever their age, and the deploy runs with `clean: true` so the
+deletions reach the branch: without it the next run's restore step
+would fetch every one of them straight back.
+
 ```yaml
 images:
   dir: "images-cached"  # cache = deploy output directory
-  ttl_days: 1     # skip revalidation for entries younger than this
+  ttl_days: 1     # revalidate after this, and forget an unused copy
   # image_cache_max_bytes: 10485760  # larger images are dropped (10 MB)
   # base_url: "https://example.com/planet/"  # default: site.site_url
 ```
 
 Images are fetched with http(s)-only, public-host, timeout and size
-guards; responses must be of an `image/*` content type, and files are
-stored under hash-derived names so no URL can escape the cache
-directory.
+guards; responses must be of an `image/*` content type; and a file is
+named for a digest of its own bytes rather than of its URL, so no URL
+can escape into a path, the same image is stored once however many
+feeds name it, and an image that changes while keeping its URL arrives
+under a new name -- which is what sends a visitor holding the old bytes
+to the new file instead of leaving them on a stale copy.
 
 **The cache is fail-closed.** An image it cannot bring in is removed
 from the post rather than left pointing at the host the feed chose,
@@ -319,8 +333,8 @@ on your site:
 * `data:` is not in the URL scheme allow-list, so an SVG cannot be
   inlined as an image source either;
 * only the raster types in `imagecache.IMAGE_EXT` are ever written,
-  always under hash-derived names, so no cached file is one a browser
-  would run;
+  always under a name that is a digest of the bytes, so no cached file
+  is one a browser would run;
 * SVG is dropped from the post rather than left remote, so visitors
   neither load it from the feed host nor from your own;
 * the cache fails closed, so no URL the build could not vouch for ever
@@ -339,7 +353,10 @@ defense in depth, `_trusted_name()` also refuses an index entry whose
 extension this writer could not have produced (`.svg`, `.html`, and so
 on), which degrades such an entry to an ordinary re-fetch instead of a
 same-origin reference.  It is a guard rail, not a sandbox: a cache you
-do not control can still serve you wrong bytes.
+do not control can still serve you wrong bytes.  Pruning is written the
+same way round: it deletes what it finds in the directory once nothing
+names it, and never treats the paths `index.json` mentions as a list of
+things to unlink.
 
 ## Security notes
 

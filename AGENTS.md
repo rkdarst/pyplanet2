@@ -38,6 +38,14 @@ The way the data flow should go:
       visitor loads nothing from them.
 	* Images are cached locally and URLs are replaced with these
       images.
+	* A cached file is named for a digest of its bytes, so the same
+      image from two feeds is stored once and one that changed at the
+      same url arrives under a new name.
+	* After the caching pass the build prunes the cache: an entry older
+      than the TTL that this run did not refer to leaves the index, and
+      any file the index no longer names is deleted.  What the output
+      links is never deleted, and only names this writer could have
+      produced are ever deleted.
 	* Remote images in the config.yaml file are also cached -- the
       favicon and the logo even when image caching is off.  Relative
       images there can stay relative.  Stylesheets (output.css) are not
