@@ -4,9 +4,11 @@ Run from the repository root with:  pytest
 
 All tests are offline: they only read the sample feeds in test-data/.
 """
+import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -675,9 +677,11 @@ def test_localize_revalidates_with_304(tmp_path):
 
 
 def test_localize_refuses_unsafe_images(tmp_path):
+    """Images the cache cannot take (a non-image type, a missing file)
+    keep their original url.  svg is deliberately NOT in this list: it
+    gets dropped, because it must never be fetched from either place."""
     cases = {
         "https://x.example/a.png": (200, b"<html/>", {"content-type": "text/html"}),
-        "https://x.example/b.svg": (200, b"<svg/>", {"content-type": "image/svg+xml"}),
         "https://x.example/c.png": (404, b"", {}),
     }
 
@@ -725,6 +729,91 @@ def test_large_images_dropped_not_remote(tmp_path):
     assert (tmp_path / "images-cached").is_dir()  # the fine one was cached
 
 
+SVG_BODY = b'<svg xmlns="http://www.w3.org/2000/svg"><script>steal()</script></svg>'
+
+
+def svg_fetcher(u, headers):
+    """Any url: an svg, which is never cacheable."""
+    return 200, SVG_BODY, {"content-type": "image/svg+xml"}
+
+
+def test_remote_svg_dropped_not_remote(tmp_path):
+    """An svg is neither cached nor left remote: caching it could put a
+    scriptable document on the site's own origin, keeping it remote would
+    leak the reader's requests to the feed host, so the img is removed
+    from the post and flagged instead -- the treatment oversized images
+    already get."""
+    svg = "https://img.example/x.svg"
+    fine = "https://img.example/ok.png"
+
+    def fetch(u, headers):
+        if u == svg:
+            return 200, SVG_BODY, {"content-type": "image/svg+xml"}
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    items = [{"summary": f'<p>t</p><img src="{svg}" alt="x"><img src="{fine}">',
+              "icon": "", "removed_content": ["video"]}]
+    localize_images(items, img_config(tmp_path), fetcher=fetch)
+    assert svg not in items[0]["summary"]
+    assert fine in items[0]["summary"]  # only the svg went
+    assert items[0]["removed_content"] == ["SVG image", "video"]
+    assert svg not in items[0]["img_map"]
+    assert items[0]["img_map"][fine]["html"].endswith(".png")
+    cache = tmp_path / "images-cached"
+    assert not [p for p in cache.iterdir() if p.suffix == ".svg"]
+    assert svg not in json.loads((cache / "index.json").read_text("utf-8"))
+
+
+@pytest.mark.parametrize("shape,ctype", [
+    ("plain", "image/svg+xml"),
+    ("params", "IMAGE/SVG+XML; charset=utf-8"),
+    ("padded", "  image/svg+xml ;q=0.9"),
+])
+def test_svg_dropped_whatever_the_header_shape(tmp_path, shape, ctype):
+    """The decision reads the normalized content type, so case, padding
+    or a parameter cannot smuggle an svg into the cache or the output."""
+    svg = "https://img.example/x.svg"
+    items = [{"summary": f'<img src="{svg}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path / shape),
+                    fetcher=lambda u, h: (200, SVG_BODY, {"content-type": ctype}))
+    assert items[0]["summary"] == ""
+    assert items[0]["removed_content"] == ["SVG image"]
+
+
+def test_svg_feed_icon_falls_back_to_placeholder(tmp_path):
+    """A feed icon that must not stay remote is dropped, so the HTML view
+    shows the grey placeholder box instead of a remote svg."""
+    svg = "https://img.example/icon.svg"
+    items = [{"summary": "<p>t</p>", "icon": svg}]
+    localize_images(items, img_config(tmp_path), fetcher=svg_fetcher)
+    assert items[0]["icon"] == ""
+    assert items[0]["removed_content"] == ["SVG image"]
+
+
+def test_svg_note_in_both_output_views(tmp_path):
+    """The dropped svg is reported in the HTML view and in the aggregated
+    Atom feed, with the same note that covers video and oversized ones."""
+    feed = tmp_path / "svged.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>S</title><link href="https://x.example/s"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">&lt;p&gt;body&lt;/p&gt;'
+        '&lt;img src="https://img.example/x.svg"&gt;</content>'
+        '</entry></feed>', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["feeds"] = [{"feed": str(feed), "name": "S"}]
+    items = fetch_all_items(config)
+    localize_images(items, img_config(tmp_path), fetcher=svg_fetcher)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    for out in (config["output"]["html_view"], config["output"]["atom_feed"]):
+        text = Path(out).read_text(encoding="utf-8")
+        assert "SVG image" in text
+        assert "consider seeing the original post" in text
+        assert "img.example/x.svg" not in text  # not even left remote
+
+
 def test_favicon_renders_link(tmp_path):
     """Favicon: unset renders no link tag; a local path appears verbatim."""
     config = theming_config(tmp_path)
@@ -764,5 +853,53 @@ def test_site_image_caching(tmp_path):
     keep = "https://img.example/down.png"
     assert localize_site_image(keep, img_config(tmp_path),
                                fetcher=boom) == keep
+    # an svg has no content note to flag it, so it is dropped silently
+    assert localize_site_image("https://img.example/icon.svg",
+                               img_config(tmp_path),
+                               fetcher=svg_fetcher) == ""
     assert localize_site_image("local.ico",
                                img_config(tmp_path)) == "local.ico"
+
+
+def test_poisoned_cache_index_non_raster_refused(tmp_path):
+    """The cache index is a trusted input, but naming a scriptable file
+    there must still never become a same-origin reference: _trusted_name
+    limits entries to the extensions the writer itself can produce, and
+    refusing heals the entry because the url gets fetched again."""
+    cache = tmp_path / "images-cached"
+    cache.mkdir()
+    for name in ("deadbeefdeadbeef.svg", "cafebabecafebabe.html"):
+        (cache / name).write_bytes(SVG_BODY)
+    fresh = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    urls = {"https://img.example/a.png": "deadbeefdeadbeef.svg",
+            "https://img.example/b.png": "cafebabecafebabe.html"}
+    (cache / "index.json").write_text(
+        json.dumps({u: {"file": f, "fetched_at": fresh}
+                    for u, f in urls.items()}), encoding="utf-8")
+
+    asked = []
+
+    def fetch(u, headers):
+        asked.append(u)
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    summary = "".join(f'<img src="{u}">' for u in sorted(urls))
+    items = [{"summary": summary, "icon": ""}]
+    mapping = localize_images(items, img_config(tmp_path), fetcher=fetch)
+    assert sorted(asked) == sorted(urls)  # refused entries went to the network
+    assert all(v["html"].endswith(".png") for v in mapping.values())
+    for bad in (".svg", ".html"):
+        assert bad not in rewrite_images(summary, mapping, "html")
+    saved = json.loads((cache / "index.json").read_text("utf-8"))
+    assert all(v["file"].endswith(".png") for v in saved.values())
+
+
+def test_trusted_name_matches_only_the_writers_output():
+    """What the index may name is exactly what the writer can produce, so
+    no legitimate cache is ever invalidated by the check."""
+    for ext in imagecache.CACHE_EXTS:
+        assert imagecache._trusted_name("0123456789abcdef." + ext)
+    for name in ("0123456789abcdef.svg", "0123456789abcdef.html",
+                 "0123456789abcdef.htm", "0123456789abcdef.PNG",
+                 "z123456789abcdef.png", "../../etc/passwd", ""):
+        assert not imagecache._trusted_name(name)

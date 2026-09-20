@@ -8,15 +8,22 @@ and repeat runs are cheap: entries younger than ttl_days are not
 touched at all, older ones are revalidated with a conditional request
 that transfers nothing when the image is unchanged.
 
-Safety rules: only http(s) URLs; no localhost/private-IP hosts;
-images over the size cap (default 10 MB) are dropped from the
-output and listed as "large image" instead of being left pointing at
-the remote host (visitor requests would leak there); the response
-must be an image/* content type; and file names are pure content-hash-derived, so no URL can ever
-escape the cache directory.  image/svg+xml is deliberately not
-localized: an SVG served from your own origin could run scripts.
-Anything that fails keeps its original remote URL, so the build never
-breaks on images.
+Safety rules: only http(s) URLs; no localhost/private-IP hosts; the
+response must be an image/* content type; and file names are pure
+content-hash-derived, so no URL can ever escape the cache directory.
+
+Two kinds of image are dropped from the post instead of being kept,
+each listed in removed_content so both output views note it, because
+leaving it remote would leak the reader's requests to the feed host:
+images over the size cap (default 10 MB, "large image") and
+image/svg+xml ("SVG image"), which could run scripts if it were ever
+served from your own origin.  Everything else that fails keeps its
+original remote URL, so the build never breaks on images.
+
+TRUSTED INPUT: the cache directory and its index.json are read as
+trusted input -- restore them only from a source you control.
+_trusted_name() limits what the index is allowed to name, as defense
+in depth, but it is not a sandbox.
 """
 import hashlib
 import ipaddress
@@ -34,6 +41,12 @@ IMAGE_EXT = {
     "image/bmp": "bmp", "image/x-icon": "ico",
     "image/vnd.microsoft.icon": "ico",
 }
+# Never cached and never left remote: an SVG served from your own origin
+# could run scripts, so SVG is dropped from the post instead.
+SVG_TYPES = {"image/svg+xml"}
+# The only extensions a cache entry may name: exactly what the writer
+# below can produce, so a tampered index cannot name a scriptable file.
+CACHE_EXTS = frozenset(IMAGE_EXT.values())
 SRC_ATTR_RE = re.compile(r'src="([^"]*)"')
 # Only hash-derived file names are ever trusted from the cache index.
 SAFE_NAME_RE = re.compile(r"\A[0-9a-f]{16}\.[a-z0-9]{1,5}\Z")
@@ -42,6 +55,10 @@ USER_AGENT = "pyplanet2/1.0 (blog aggregator)"
 
 class ImageTooLarge(ValueError):
     """Raised by fetchers when a response exceeds max_bytes."""
+
+
+class SvgImage(ValueError):
+    """Raised when a response is an SVG: never cached, never left remote."""
 
 
 def is_http_url(url):
@@ -142,10 +159,23 @@ def save_index(cache_dir, index):
     tmp.replace(cache_dir / "index.json")
 
 
+def _trusted_name(file_name):
+    """True for names this module could have written itself.
+
+    Being hash-shaped is not enough: SAFE_NAME_RE takes any short
+    lower-case extension, so an index naming an .svg or .html file would
+    put a scriptable same-origin document in the reader's path.  The
+    check is exact rather than a deny-list, and refusing is self-healing
+    -- the url falls through to a normal fetch, which rewrites the entry.
+    """
+    return bool(SAFE_NAME_RE.match(file_name)
+                and file_name.rsplit(".", 1)[-1] in CACHE_EXTS)
+
+
 def _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl):
     """Cached paths when the entry is complete and within its TTL."""
     file_name = entry.get("file", "")
-    if not SAFE_NAME_RE.match(file_name) or not (cache_dir / file_name).is_file():
+    if not _trusted_name(file_name) or not (cache_dir / file_name).is_file():
         return None
     try:
         fetched = datetime.fromisoformat(entry["fetched_at"])
@@ -158,7 +188,7 @@ def _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl):
 
 def _reusable(entry, cache_dir):
     file_name = entry.get("file", "")
-    if SAFE_NAME_RE.match(file_name) and (cache_dir / file_name).is_file():
+    if _trusted_name(file_name) and (cache_dir / file_name).is_file():
         return file_name
     return None
 
@@ -187,7 +217,9 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
         return None
     content_type = (resp_headers.get("content-type") or "").split(";")[0]
     content_type = content_type.strip().lower()
-    ext = IMAGE_EXT.get(content_type)  # also drops svg and unknown types
+    if content_type in SVG_TYPES:
+        raise SvgImage(url)  # caller drops the image and flags the post
+    ext = IMAGE_EXT.get(content_type)  # also drops unknown types
     if not ext:
         return None
     file_name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16] + "." + ext
@@ -205,9 +237,10 @@ def localize_site_image(url, config, fetcher=None):
     """Cache one site-level image (e.g. a favicon); return a local path.
 
     Local (non-URL) values are returned unchanged, to be used as
-    given.  A remote image too large for the cache is dropped (empty
-    return); other failures keep the original URL, like any image
-    the cache could not take.
+    given.  A remote image too large for the cache, or an SVG, is
+    dropped (empty return) -- there is no content note to carry the
+    warning for a site-level image; other failures keep the original
+    URL, like any image the cache could not take.
     """
     if not url or not is_http_url(url):
         return url
@@ -224,6 +257,9 @@ def localize_site_image(url, config, fetcher=None):
         except ImageTooLarge:
             print(f"Warning: dropping oversized image, not cached: {url}")
             return ""
+        except SvgImage:
+            print(f"Warning: dropping SVG image, not cached: {url}")
+            return ""
     if paths is not None:
         save_index(cache_dir, index)
         return paths["html"]
@@ -232,26 +268,27 @@ def localize_site_image(url, config, fetcher=None):
 
 
 
-def drop_large_images(items, large_urls):
-    """Remove img tags for too-large images and flag the posts.
+def drop_uncacheable_images(items, reasons):
+    """Remove img tags for images that must not stay remote, flag posts.
 
-    Flagged posts list "large image" in removed_content, so both
-    output views note it; a too-large feed icon falls back to the
-    placeholder box.
+    ``reasons`` maps an url to the label listing it in
+    removed_content ("large image", "SVG image"), so both output views
+    note it; a flagged feed icon falls back to the placeholder box.
     """
     for item in items:
         summary = item.get("summary") or ""
-        lost = False
-        for url in large_urls:
+        lost = set()
+        for url, reason in reasons.items():
             summary, hits = re.subn(
                 f'<img[^>]*src="{re.escape(url)}"[^>]*>', "", summary)
-            lost = lost or bool(hits)
-        if item.get("icon") in large_urls:
+            lost = lost | ({reason} if hits else set())
+        icon_reason = reasons.get(item.get("icon") or "")
+        if icon_reason:
             item["icon"] = ""
-            lost = True
+            lost.add(icon_reason)
         if lost:
             item["removed_content"] = sorted(
-                set(item.get("removed_content") or []) | {"large image"})
+                set(item.get("removed_content") or []) | lost, key=str.lower)
         item["summary"] = summary
 
 
@@ -275,7 +312,7 @@ def localize_images(items, config, fetcher=None):
             urls.add(item["icon"])
 
     mapping = {}
-    large_urls = set()
+    reasons = {}
     for url in sorted(urls):
         entry = index.get(url) or {}
         paths = _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl)
@@ -286,12 +323,16 @@ def localize_images(items, config, fetcher=None):
             except ImageTooLarge:
                 # Too big to cache; leaving it remote would leak
                 # visitor requests, so it gets dropped instead.
-                large_urls.add(url)
+                reasons[url] = "large image"
+            except SvgImage:
+                # Caching it could put a scriptable document on your own
+                # origin; leaving it remote would leak visitor requests.
+                reasons[url] = "SVG image"
         if paths is not None:
             mapping[url] = paths
 
-    if large_urls:
-        drop_large_images(items, large_urls)
+    if reasons:
+        drop_uncacheable_images(items, reasons)
 
     if urls:
         save_index(cache_dir, index)

@@ -243,13 +243,18 @@ images:
 Images are fetched with http(s)-only, public-host, timeout and size
 guards; responses must be of an `image/*` content type, and files are
 stored under hash-derived names so no URL can escape the cache
-directory.  SVG images are deliberately not cached (they could carry
-scripts when served same-origin), and any failure simply keeps the
-original remote URL, so image problems never break a build.  Images
-over `image_cache_max_bytes` are the one exception: they are dropped from the post
-entirely and listed as `large image` in the content note, rather than
-left to leak visitor requests to the remote host.  The site favicon
-(`output.favicon`) is cached even without an `images` section; local
+directory.  Two kinds of image are dropped from the post rather than
+kept, each named in the content note: those over
+`image_cache_max_bytes` (`large image`), and SVG, `image/svg+xml`
+(`SVG image`) -- an SVG served from your own origin could run scripts,
+so it is never cached, and leaving it remote would leak visitor
+requests to the feed host, so it is not kept remote either.  A feed
+`icon` that is an SVG falls back to the grey placeholder box.  Every
+other failure simply keeps the original remote URL, so image problems
+never break a build; a dropped image is re-fetched on each run, since
+nothing about it is ever cached.  The site favicon
+(`output.favicon`) is cached even without an `images` section, and is
+dropped with a warning if it turns out oversized or to be an SVG; local
 files given in config (`favicon`, `logo`, feed `icon`) are referenced
 as written, so the deployment must provide them.
 
@@ -259,6 +264,36 @@ are not resolved before connecting: a DNS name pointing at a local
 address would therefore still be fetched at build time.  Only the
 build machine is exposed that way -- visitors never are, since they
 only ever load the cached copies.
+
+### Security model of the cache
+
+Four separate layers stand between a hostile feed and script running
+on your site:
+
+* the sanitizer drops `<svg>` and `<math>` elements whole and notes
+  the loss, so inline SVG in feed content never survives (see *Security
+  notes*), and its `<script>` body is discarded before that;
+* `data:` is not in the URL scheme allow-list, so an SVG cannot be
+  inlined as an image source either;
+* only the raster types in `imagecache.IMAGE_EXT` are ever written,
+  always under hash-derived names, so no cached file is one a browser
+  would run;
+* SVG is dropped from the post rather than left remote, so visitors
+  neither load it from the feed host nor from your own.
+
+An SVG needs to be loaded as a *document* -- opened directly, or
+framed -- before its scripts run; through `<img>` it renders inert.
+
+**Trusted input.** The cache directory and its `index.json` are read as
+trusted input: a deployment restores them from the branch that
+published them, and whatever `index.json` names is used without asking
+where it came from.  Restore them only from a branch you control --
+never from a fork, a pull request, or a cache shared with one.  As
+defense in depth, `_trusted_name()` also refuses an index entry whose
+extension this writer could not have produced (`.svg`, `.html`, and so
+on), which degrades such an entry to an ordinary re-fetch instead of a
+same-origin reference.  It is a guard rail, not a sandbox: a cache you
+do not control can still serve you wrong bytes.
 
 ## Security notes
 
