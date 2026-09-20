@@ -17,8 +17,17 @@ each listed in removed_content so both output views note it, because
 leaving it remote would leak the reader's requests to the feed host:
 images over the size cap (default 10 MB, "large image") and
 image/svg+xml ("SVG image"), which could run scripts if it were ever
-served from your own origin.  Everything else that fails keeps its
-original remote URL, so the build never breaks on images.
+served from your own origin.
+
+The same reasoning makes the cache fail-closed everywhere else:
+anything the fetch could not turn into a cached image -- an error
+response, a refused host, an unrecognized type -- is removed too and
+noted as "image unavailable".  A feed-chosen url left in the page is
+dialed by the visitor, where this module's SSRF guard, which protects
+the build machine, has no say.  Nothing about such a failure is
+recorded, so a later run retries it and the image comes back by
+itself.  Without an images section nothing is fetched at all and every
+url stays as written, which is the documented opt-out.
 
 TRUSTED INPUT: the cache directory and its index.json are read as
 trusted input -- restore them only from a source you control.
@@ -39,7 +48,8 @@ IMAGE_EXT = {
     "image/png": "png", "image/apng": "png", "image/jpeg": "jpg",
     "image/gif": "gif", "image/webp": "webp", "image/avif": "avif",
     "image/bmp": "bmp", "image/x-icon": "ico",
-    "image/vnd.microsoft.icon": "ico",
+    "image/vnd.microsoft.icon": "ico", "image/tiff": "tif",
+    "image/heif": "heif", "image/heic": "heic",
 }
 # Never cached and never left remote: an SVG served from your own origin
 # could run scripts, so SVG is dropped from the post instead.
@@ -47,6 +57,11 @@ SVG_TYPES = {"image/svg+xml"}
 # The only extensions a cache entry may name: exactly what the writer
 # below can produce, so a tampered index cannot name a scriptable file.
 CACHE_EXTS = frozenset(IMAGE_EXT.values())
+# The removed_content labels naming why an image is missing, as both
+# output views render them: "Some embedded content ... (large image)".
+LARGE_NOTE = "large image"
+SVG_NOTE = "SVG image"
+UNCACHED_NOTE = "image unavailable"
 SRC_ATTR_RE = re.compile(r'src="([^"]*)"')
 # Only hash-derived file names are ever trusted from the cache index.
 SAFE_NAME_RE = re.compile(r"\A[0-9a-f]{16}\.[a-z0-9]{1,5}\Z")
@@ -237,10 +252,10 @@ def localize_site_image(url, config, fetcher=None):
     """Cache one site-level image (e.g. a favicon); return a local path.
 
     Local (non-URL) values are returned unchanged, to be used as
-    given.  A remote image too large for the cache, or an SVG, is
-    dropped (empty return) -- there is no content note to carry the
-    warning for a site-level image; other failures keep the original
-    URL, like any image the cache could not take.
+    given.  Any remote image the cache cannot take is dropped (empty
+    return) -- oversized, an SVG, or one the build could not reach or
+    recognize; a site-level image has no content note to carry the
+    warning, so dropping it only prints.
     """
     if not url or not is_http_url(url):
         return url
@@ -263,8 +278,8 @@ def localize_site_image(url, config, fetcher=None):
     if paths is not None:
         save_index(cache_dir, index)
         return paths["html"]
-    print(f"Warning: could not cache image, keeping remote URL: {url}")
-    return url
+    print(f"Warning: image not cached, dropping it: {url}")
+    return ""
 
 
 
@@ -272,8 +287,9 @@ def drop_uncacheable_images(items, reasons):
     """Remove img tags for images that must not stay remote, flag posts.
 
     ``reasons`` maps an url to the label listing it in
-    removed_content ("large image", "SVG image"), so both output views
-    note it; a flagged feed icon falls back to the placeholder box.
+    removed_content ("large image", "SVG image", "image unavailable"),
+    so both output views note it; a flagged feed icon falls back to the
+    placeholder box.
     """
     for item in items:
         summary = item.get("summary") or ""
@@ -323,11 +339,20 @@ def localize_images(items, config, fetcher=None):
             except ImageTooLarge:
                 # Too big to cache; leaving it remote would leak
                 # visitor requests, so it gets dropped instead.
-                reasons[url] = "large image"
+                reasons[url] = LARGE_NOTE
+                print(f"Warning: oversized image removed from the post: {url}")
             except SvgImage:
                 # Caching it could put a scriptable document on your own
                 # origin; leaving it remote would leak visitor requests.
-                reasons[url] = "SVG image"
+                reasons[url] = SVG_NOTE
+                print(f"Warning: SVG image removed from the post: {url}")
+            # Fail closed on anything else the cache could not bring in:
+            # the url came from a feed, and a url left in the page is one
+            # the visitor's browser dials, past this module's guard.
+            if paths is None and url not in reasons:
+                reasons[url] = UNCACHED_NOTE
+                print(f"Warning: image not cached, removed from the "
+                      f"post: {url}")
         if paths is not None:
             mapping[url] = paths
 

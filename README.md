@@ -108,8 +108,12 @@ output:
   html_view: "planet.html"          # HTML view output file
   # css: ["custom.css"]             # optional: extra stylesheets (paths or
                                     # URLs) added after the built-in styling
+                                    # (loaded by the visitor, never fetched
+                                    # by the build)
   # logo: "logo.png"                # optional: header image; its height is
-                                    # capped, never upscaled, width is free
+                                    # capped, never upscaled, width is free;
+                                    # a local file is used as given, or a URL
+                                    # is fetched and cached
   # favicon: "favicon.ico"          # optional: browser tab icon; a local
                                     # file used as given, or a URL to cache
 
@@ -135,11 +139,6 @@ feeds:
     # icon: "https://blog.example.org/favicon.ico"
                                     # optional avatar beside each post; a grey
                                     # placeholder box is shown if unset
-    # resolve_urls: true            # optional; resolve relative urls inside
-                                    # this feed's items against each item's own
-                                    # link instead of the feed url (default:
-                                    # false) — for blogs that serve posts from
-                                    # subdirectories
     # prefer_summary: true          # optional; use the short summary instead
                                     # of the full text when Atom feeds carry
                                     # both (default: false)
@@ -147,6 +146,22 @@ feeds:
 # An optional `images` section localizes referenced images; see the
 # "Image caching" section below for its keys.
 ```
+
+### Relative URLs are always made absolute
+
+Feeds routinely carry relative URLs, and on an aggregated page those
+would resolve against *your* site rather than the blog they came from;
+the aggregated Atom feed requires absolute links in any case.  Every URL
+is therefore resolved while the feed is read: each item's own link
+against the feed document that carried it, and the URLs inside a post
+against that post's link, which is the base blogs that serve posts from
+subdirectories need.  Absolute URLs and plain `#anchors` are left
+exactly as written, so an in-post anchor still stays on the page.  A
+feed configured as a local file path is the one exception -- it offers
+no address to resolve against, and exists for offline testing.  (Until
+it became unconditional this was the per-feed `resolve_urls` option;
+that key no longer exists, and an old config carrying it is simply
+ignored.)
 
 ## Customizing the HTML view
 
@@ -247,31 +262,49 @@ images:
 Images are fetched with http(s)-only, public-host, timeout and size
 guards; responses must be of an `image/*` content type, and files are
 stored under hash-derived names so no URL can escape the cache
-directory.  Two kinds of image are dropped from the post rather than
-kept, each named in the content note: those over
-`image_cache_max_bytes` (`large image`), and SVG, `image/svg+xml`
-(`SVG image`) -- an SVG served from your own origin could run scripts,
-so it is never cached, and leaving it remote would leak visitor
-requests to the feed host, so it is not kept remote either.  A feed
-`icon` that is an SVG falls back to the grey placeholder box.  Every
-other failure simply keeps the original remote URL, so image problems
-never break a build; a dropped image is re-fetched on each run, since
-nothing about it is ever cached.  The site favicon
-(`output.favicon`) is cached even without an `images` section, and is
-dropped with a warning if it turns out oversized or to be an SVG; local
-files given in config (`favicon`, `logo`, feed `icon`) are referenced
-as written, so the deployment must provide them.
+directory.
+
+**The cache is fail-closed.** An image it cannot bring in is removed
+from the post rather than left pointing at the host the feed chose,
+because a URL left in the page is one the *visitor* loads, past every
+guard this program owns.  The build still never fails over images; it
+just leaves them out.  The content note names the cause:
+`large image` for those over `image_cache_max_bytes`, `SVG image` for
+`image/svg+xml` (never cached: served from your own origin it could run
+scripts), and `image unavailable` for everything else the fetch could
+not turn into an image -- an error response, an unreachable or refused
+host, or a type outside `IMAGE_EXT`, which covers png, apng, jpeg, gif,
+webp, avif, bmp, ico, tiff and heif/heic.  A feed `icon` in any of
+those cases falls back to the grey placeholder box.  Nothing about a
+failure is recorded, so a later run retries it and a dropped image
+comes back on its own; the price is that a build without network egress
+loses images instead of falling back to loading them remotely.
+
+The site images the config names -- `output.favicon` and `output.logo`
+-- are cached the same way and even without an `images` section, since
+those URLs are the operator's own choice rather than feed content: a
+remote one is fetched by the build and served from the same origin, and
+one it cannot take is dropped with a console warning instead of being
+left for the visitor, the HTML falling back to its placeholder box.
+There is no content note to carry a site-level image, so that warning
+is the only signal.  Local paths in the config are referenced as
+written, so the deployment must provide them, and so is a feed `icon`
+while image caching is off.  Stylesheets (`output.css`) are the one
+remote URL in the config the build never fetches: the visitor loads
+those from wherever they point, which is ground you chose yourself.
 
 The SSRF guard blocks non-http(s) schemes and literal private or
-loopback addresses and re-checks every redirect hop, but hostnames
-are not resolved before connecting: a DNS name pointing at a local
-address would therefore still be fetched at build time.  Only the
-build machine is exposed that way -- visitors never are, since they
-only ever load the cached copies.
+loopback addresses and re-checks every redirect hop, but hostnames are
+not resolved before connecting: a DNS name pointing at a local address
+would therefore still be fetched at build time.  Only the build machine
+is exposed that way.  Visitors are exposed neither that way nor any
+other, because what the build could not verify is taken out of the page
+-- kept remote, a feed could otherwise send every visitor's browser to
+`http://192.168.0.1/` and have them probe their own network.
 
 ### Security model of the cache
 
-Four separate layers stand between a hostile feed and script running
+Five separate layers stand between a hostile feed and script running
 on your site:
 
 * the sanitizer drops `<svg>` and `<math>` elements whole and notes
@@ -283,7 +316,10 @@ on your site:
   always under hash-derived names, so no cached file is one a browser
   would run;
 * SVG is dropped from the post rather than left remote, so visitors
-  neither load it from the feed host nor from your own.
+  neither load it from the feed host nor from your own;
+* the cache fails closed, so no URL the build could not vouch for ever
+  reaches a visitor -- the guard that keeps the *build* from dialing
+  private addresses has no say over what a visitor's browser dials.
 
 An SVG needs to be loaded as a *document* -- opened directly, or
 framed -- before its scripts run; through `<img>` it renders inert.

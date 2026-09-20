@@ -37,4 +37,4 @@ feeds:
   - feed: "test-data/rss.xml"
     name: "RSS test"
     site: "example.org"
-    resolve_urls: true
+    icon: "static/icon.png"

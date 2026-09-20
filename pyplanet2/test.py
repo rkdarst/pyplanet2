@@ -6,10 +6,12 @@ All tests are offline: they only read the sample feeds in test-data/.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import pytest
@@ -67,29 +69,84 @@ def test_no_base_url_is_noop():
     assert make_urls_absolute('<img src="a.png">', "#") == '<img src="a.png">'
 
 
-def make_feeds_config(tmp_path, resolve_urls):
+def rss_config():
     """Config for fetch_all_items() over the RSS sample feed."""
-    return {
-        "feeds": [{
-            "feed": str(REPO / "test-data" / "rss.xml"),
-            "name": "RSS test",
-            "resolve_urls": resolve_urls,
-        }],
-    }
+    return {"feeds": [{"feed": str(REPO / "test-data" / "rss.xml"),
+                       "name": "RSS test"}]}
 
 
-def test_resolve_urls_option(tmp_path):
-    """resolve_urls: true rewrites against the item link; default leaves
-    feedparser's behavior in place."""
-    on = fetch_all_items(make_feeds_config(tmp_path, True))
-    assert "http://example.org/images/pic.png" in on[0]["summary"]
-    assert "http://example.org/about.html" in on[0]["summary"]
+def relative_config():
+    """Config over the sample feed whose URLs -- the entry link included
+    -- are all relative.  Its xml:base gives the local file the address
+    it would otherwise lack, so both resolution layers have a base."""
+    return {"feeds": [{"feed": str(REPO / "test-data" / "atom-relative.xml"),
+                       "name": "Relative feed"}]}
 
-    off = fetch_all_items(make_feeds_config(tmp_path, False))
-    # not resolved against the item link (feedparser has no usable base
-    # for a local-file feed, so it stays relative or empty -- either way
-    # it must not be the entry-based absolute URL)
-    assert "http://example.org/images/pic.png" not in off[0]["summary"]
+
+def test_relative_urls_are_always_resolved():
+    """Relative URLs inside a post resolve against that post's own link,
+    with nothing to switch it on: a relative URL on a planet page would
+    point at the planet, not at the blog it came from."""
+    items = fetch_all_items(rss_config())
+    assert "http://example.org/images/pic.png" in items[0]["summary"]
+    assert "http://example.org/about.html" in items[0]["summary"]
+
+
+def test_both_resolution_layers_apply():
+    """The entry link resolves against the feed document, and the URLs
+    inside the post against *that* rather than the feed -- what blogs
+    serving posts from subdirectories need."""
+    item = fetch_all_items(relative_config())[0]
+    assert item["link"] == "https://blog.example.org/2026/09/post.html"
+    summary = item["summary"]
+    assert "https://blog.example.org/2026/about.html" in summary  # up one
+    assert "https://blog.example.org/2026/09/img/pic.png" in summary
+    assert "https://blog.example.org/root.png" in summary  # host-relative
+    assert "https://cdn.example.org/x.png" in summary  # scheme borrowed
+
+
+def test_anchors_stay_on_the_page():
+    """feedparser's own resolver is the one thing deliberately left off:
+    it resolves against the feed document, which would turn a plain
+    anchor into a link to the feed itself."""
+    summary = fetch_all_items(relative_config())[0]["summary"]
+    assert 'href="#anchor"' in summary
+
+
+def test_item_base_prefers_the_link_then_the_feed():
+    """The fallback an offline feed cannot reach: an entry without a
+    usable link resolves its URLs against the feed document."""
+    assert core._item_base("https://blog.example.org/2026/09/post.html",
+                           "https://blog.example.org/feed.xml") == \
+        "https://blog.example.org/2026/09/post.html"
+    assert core._item_base("#", "https://blog.example.org/feed.xml") == \
+        "https://blog.example.org/feed.xml"
+    assert core._item_base("posts/one.html", "") == ""
+
+
+def test_local_file_feed_without_a_base_keeps_urls(tmp_path):
+    """Documented exception: given no address to resolve against, ingest
+    rewrites nothing rather than inventing a base."""
+    text = (REPO / "test-data" / "atom-relative.xml").read_text(
+        encoding="utf-8")
+    offline = tmp_path / "no-base.xml"
+    offline.write_text(re.sub(r'\s+xml:base="[^"]*"', "", text),
+                       encoding="utf-8")
+    item = fetch_all_items({"feeds": [{"feed": str(offline),
+                                       "name": "no base"}]})[0]
+    assert 'src="img/pic.png"' in item["summary"]
+    assert 'href="../about.html"' in item["summary"]
+
+
+def test_no_relative_url_survives_ingest():
+    """The contract every later stage now assumes: whatever comes out of
+    ingest is absolute, or a plain anchor that means this page."""
+    for config in (rss_config(), relative_config(), make_atom_config()):
+        for item in fetch_all_items(config):
+            for url in re.findall(r'(?:src|href)="([^"]*)"', item["summary"]):
+                assert urlparse(url).scheme or url.startswith("#"), url
+            assert urlparse(item["link"]).scheme or item["link"] == "#", \
+                item["link"]
 
 
 def test_feed_title_is_the_local_name_only(tmp_path):
@@ -576,8 +633,7 @@ def test_cli_end_to_end(tmp_path):
         "feeds": [
             {"feed": str(REPO / "test-data" / "atom.xml"), "name": "Atom test",
              "icon": "https://example.org/atom-icon.png"},
-            {"feed": str(REPO / "test-data" / "rss.xml"), "name": "RSS test",
-             "resolve_urls": True},
+            {"feed": str(REPO / "test-data" / "rss.xml"), "name": "RSS test"},
         ],
     }
     config_file = tmp_path / "config.yaml"
@@ -676,24 +732,111 @@ def test_localize_revalidates_with_304(tmp_path):
                                      items[0]["img_map"], "html")
 
 
-def test_localize_refuses_unsafe_images(tmp_path):
-    """Images the cache cannot take (a non-image type, a missing file)
-    keep their original url.  svg is deliberately NOT in this list: it
-    gets dropped, because it must never be fetched from either place."""
+def test_localize_drops_images_that_fail_to_load(tmp_path, capsys):
+    """The cache fails closed: whatever the build could not bring in --
+    an error response, an unreachable host, a non-image type -- is
+    removed from the post and noted, never left for the visitor to load
+    from a url the feed chose.  svg is not in this list: it gets its own
+    label, since it must come from neither place."""
     cases = {
-        "https://x.example/a.png": (200, b"<html/>", {"content-type": "text/html"}),
-        "https://x.example/c.png": (404, b"", {}),
+        "https://x.example/404.png": (404, b"", {}),
+        "https://x.example/html.png": (200, b"<html/>",
+                                       {"content-type": "text/html"}),
+        "https://x.example/down.png": OSError("connection refused"),
+        "https://x.example/refused.png": ValueError("refusing private host"),
     }
 
     def fetch(u, headers):
-        return cases[u]
+        found = cases[u]
+        if isinstance(found, Exception):
+            raise found
+        return found
 
     summary = "".join(f'<img src="{u}">' for u in sorted(cases))
     items = [{"summary": summary, "icon": ""}]
     localize_images(items, img_config(tmp_path), fetcher=fetch)
     assert not items[0].get("img_map")
-    for u in cases:  # originals are kept when caching fails
-        assert f'src="{u}"' in items[0]["summary"]
+    for u in cases:  # nothing left in the page for the visitor to load
+        assert u not in items[0]["summary"]
+    assert items[0]["removed_content"] == ["image unavailable"]
+    # a failed url is not remembered, so nothing sticks against retry
+    assert imagecache.load_index(tmp_path / "images-cached") == {}
+    assert "image not cached, removed from the post" in capsys.readouterr().out
+
+
+def test_uncached_image_returns_on_a_later_run(tmp_path):
+    """Nothing about a failure is recorded, so a transient network problem
+    costs one deploy: the next run recovers the image and the note."""
+    url = "https://img.example/here.png"
+
+    def down(u, headers):
+        raise OSError("network down")
+
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path), fetcher=down)
+    assert url not in items[0]["summary"]
+    assert items[0]["removed_content"] == ["image unavailable"]
+
+    def up(u, headers):
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path), fetcher=up)
+    assert url in items[0]["img_map"]
+    assert "removed_content" not in items[0]
+
+
+def test_icon_that_cannot_load_falls_back(tmp_path):
+    """An unreachable feed icon gets the placeholder box, and the posts
+    say an image is unavailable rather than pointing visitors at it."""
+    def down(u, headers):
+        raise OSError("network down")
+
+    items = [{"summary": "<p>t</p>", "icon": "https://img.example/avatar.png"}]
+    localize_images(items, img_config(tmp_path), fetcher=down)
+    assert items[0]["icon"] == ""
+    assert items[0]["removed_content"] == ["image unavailable"]
+
+
+def test_unreachable_image_note_in_both_output_views(tmp_path):
+    """The same note that covers video, svg and oversized images, in the
+    HTML page and in the aggregated Atom feed."""
+    feed = tmp_path / "broken.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>B</title><link href="https://x.example/b"/>'
+        '<id>2</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">&lt;p&gt;body&lt;/p&gt;'
+        '&lt;img src="https://img.example/gone.png"&gt;</content>'
+        '</entry></feed>', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["feeds"] = [{"feed": str(feed), "name": "B"}]
+
+    def missing(u, headers):
+        return 404, b"", {}
+
+    items = fetch_all_items(config)
+    localize_images(items, img_config(tmp_path), fetcher=missing)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR,
+                       config)
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    for out in (config["output"]["html_view"], config["output"]["atom_feed"]):
+        text = Path(out).read_text(encoding="utf-8")
+        assert "image unavailable" in text
+        assert "consider seeing the original post" in text
+        assert "img.example/gone.png" not in text
+
+
+def test_guarded_host_never_reaches_the_page(tmp_path):
+    """The guard protects the build machine; dropping what it refuses is
+    what protects the visitor, whom a kept url would have sent to a
+    private address of their own."""
+    # the urllib fetcher refuses this before it opens any socket
+    url = "http://127.0.0.1:9/x.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+    localize_images(items, img_config(tmp_path))  # the real fetcher
+    assert url not in items[0]["summary"]
+    assert items[0]["removed_content"] == ["image unavailable"]
 
 
 def test_fetcher_refuses_private_hosts():
@@ -829,8 +972,8 @@ def test_favicon_renders_link(tmp_path):
 
 
 def test_site_image_caching(tmp_path):
-    """localize_site_image: local verbatim, remote cached, oversized
-    dropped, unreachable keeps its URL."""
+    """localize_site_image: local verbatim, remote cached, and anything
+    the cache cannot take dropped rather than left for the visitor."""
     from pyplanet2.imagecache import localize_site_image, ImageTooLarge
 
     def ok(u, headers):
@@ -850,15 +993,112 @@ def test_site_image_caching(tmp_path):
     def boom(u, headers):
         raise OSError("network down")
 
-    keep = "https://img.example/down.png"
-    assert localize_site_image(keep, img_config(tmp_path),
-                               fetcher=boom) == keep
+    # fail closed here too: an unverified favicon is not left remote
+    assert localize_site_image("https://img.example/down.png",
+                               img_config(tmp_path), fetcher=boom) == ""
     # an svg has no content note to flag it, so it is dropped silently
     assert localize_site_image("https://img.example/icon.svg",
                                img_config(tmp_path),
                                fetcher=svg_fetcher) == ""
     assert localize_site_image("local.ico",
                                img_config(tmp_path)) == "local.ico"
+
+
+def test_site_assets_are_cached(tmp_path):
+    """The favicon and the logo are the operator's own urls: a remote one
+    is fetched by the build and served from this origin, and the page
+    carries no reference to the host they were written for."""
+    config = theming_config(tmp_path)
+    config["images"] = img_config(tmp_path)["images"]
+    config["output"]["favicon"] = "https://img.example/fav.ico"
+    config["output"]["logo"] = "https://img.example/logo.png"
+
+    def fetch(u, headers):
+        ctype = "image/x-icon" if u.endswith(".ico") else "image/png"
+        return 200, b"DATA", {"content-type": ctype}
+
+    core.localize_site_assets(config, fetcher=fetch)
+    for key, ext in (("favicon", ".ico"), ("logo", ".png")):
+        got = config["output"][key]
+        assert got.endswith(ext) and Path(got).is_file()
+        assert got.startswith(str(tmp_path / "images-cached"))
+
+    generate_html_view(fetch_all_items(config), config["output"]["html_view"],
+                       TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert "img.example" not in page
+    assert '<link rel="icon"' in page and 'class="logo"' in page
+
+
+def test_site_assets_that_cannot_load_are_dropped(tmp_path, capsys):
+    """A logo or favicon the build cannot take is dropped rather than left
+    for the visitor: the page falls back to its placeholders, and the
+    console says which and why, since no content note can carry it."""
+    config = theming_config(tmp_path)
+    config["images"] = img_config(tmp_path)["images"]
+    config["output"]["favicon"] = "https://img.example/down.ico"
+    config["output"]["logo"] = "https://img.example/big.png"
+
+    def fetch(u, headers):
+        if u.endswith(".png"):
+            raise imagecache.ImageTooLarge("oversized")
+        raise OSError("network down")
+
+    core.localize_site_assets(config, fetcher=fetch)
+    assert config["output"]["favicon"] == ""
+    assert config["output"]["logo"] == ""
+    out = capsys.readouterr().out
+    assert "dropping oversized image" in out
+    assert "image not cached, dropping it" in out
+
+    generate_html_view(fetch_all_items(config), config["output"]["html_view"],
+                       TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert "img.example" not in page
+    assert "logo-placeholder" in page        # the grey box, not a hole
+    assert 'rel="icon"' not in page
+
+
+def test_config_css_is_never_fetched(tmp_path):
+    """Stylesheets are the one config url the build does not touch: they
+    load in the visitor's browser from wherever the config points, which
+    is ground the operator chose.  Caching them would mean a second type
+    allow-list and a scriptable file on your own origin for no privacy
+    gain, so this records the decision instead of leaving it to memory."""
+    config = theming_config(tmp_path)
+    config["images"] = img_config(tmp_path)["images"]
+    config["output"]["css"] = ["custom.css", "https://cdn.example/x.css"]
+    asked = []
+
+    def fetch(u, headers):
+        asked.append(u)
+        return 200, b"x", {"content-type": "text/css"}
+
+    core.localize_site_assets(config, fetcher=fetch)
+    assert asked == []
+    assert config["output"]["css"] == [
+        "custom.css", "https://cdn.example/x.css"]
+    generate_html_view([], config["output"]["html_view"], TEMPLATE_DIR, config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    assert '<link rel="stylesheet" href="custom.css">' in page
+    assert '<link rel="stylesheet" href="https://cdn.example/x.css">' in page
+
+
+def test_site_assets_cached_without_images_section(tmp_path, monkeypatch):
+    """Site-level images are cached even with image caching off: those
+    urls are the operator's own, so the privacy opt-out that leaves feed
+    content untouched does not extend to making visitors load them."""
+    monkeypatch.chdir(tmp_path)  # with no images section the dir is default
+    config = theming_config(tmp_path)
+    config["output"]["logo"] = "https://img.example/logo.png"
+
+    def fetch(u, headers):
+        return 200, b"PNGDATA", {"content-type": "image/png"}
+
+    core.localize_site_assets(config, fetcher=fetch)
+    assert "images" not in config
+    assert config["output"]["logo"].startswith("images-cached/")
+    assert Path(config["output"]["logo"]).is_file()
 
 
 def test_poisoned_cache_index_non_raster_refused(tmp_path):

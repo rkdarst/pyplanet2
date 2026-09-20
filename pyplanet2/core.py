@@ -114,10 +114,11 @@ def _resolve_url(url, base_url):
 def make_urls_absolute(html_text, base_url):
     """Rewrite relative src/href URLs in feed HTML to absolute ones.
 
-    URLs are resolved against base_url (the feed item's own link), so
-    embedded images and links still work once shown on the aggregated
-    page.  Absolute URLs and plain #anchors are left untouched.
-    Enabled per feed via the resolve_urls config option.
+    URLs are resolved against base_url (the feed item's own link, or the
+    feed url when an item carries none), so embedded images and links
+    still work once shown on the aggregated page.  Absolute URLs and
+    plain #anchors are left untouched.  fetch_all_items() applies this to
+    every feed: a relative URL cannot survive on a planet page.
     """
     if not html_text or not base_url or base_url == "#":
         return html_text
@@ -129,6 +130,19 @@ def make_urls_absolute(html_text, base_url):
         return f"{match.group(1)}={quote}{_resolve_url(value, base_url)}{quote}"
 
     return REL_URL_ATTR_RE.sub(replace, html_text)
+
+
+def _item_base(link, feed_base):
+    """Base for resolving the URLs inside one item: its own link, or the
+    feed document when the entry carries no usable link.
+
+    Neither counts when it is not an address at all: a feed given as a
+    local file path has no authority to resolve against, and inventing
+    one would rewrite the markup on a guess, so its URLs are left
+    exactly as written.
+    """
+    base = feed_base if link == "#" else link
+    return base if urlparse(base).scheme else ""
 
 
 # URL schemes allowed in feed-supplied href/src attributes and in entry
@@ -317,6 +331,12 @@ def fetch_all_items(config):
     elements when the sanitizer lost content readers would miss,
     empty when nothing was lost).  localize_images() may
     add "img_map".
+
+    Every URL that leaves here is absolute -- "link" and the URLs
+    inside "summary" are resolved to absolute ones, so no later stage
+    ever has to guess what a relative URL was meant to point at.  The
+    lone exception is a feed configured as a local file path, which
+    carries no address to resolve against.
     """
     # Optional pool-wide age filter (0/unset = keep all ages); applies
     # to every output.  Undated posts fall back to epoch and thus age
@@ -329,20 +349,23 @@ def fetch_all_items(config):
 
     for feed_id, feed_config in enumerate(config["feeds"]):
         feed_url = feed_config["feed"]
-        # resolve_urls: rewrite relative URLs inside items against each
-        # item's own link, instead of feedparser's default of resolving
-        # against the feed URL (wrong for blogs with posts in
-        # subdirectories).  Disabled by default.
-        resolve_urls = feed_config.get("resolve_urls", False)
         # prefer_summary: use the short Atom <summary> even when the
         # entry also carries full <content> (default: full text wins).
         prefer_summary = feed_config.get("prefer_summary", False)
-        # feedparser's own sanitizer stays off: the bleach cleaner in
-        # sanitize_html() is the single policy point, and
-        # lost_content_tags() must see the raw markup.
-        feed = feedparser.parse(feed_url,
-                                resolve_relative_uris=not resolve_urls,
+        # feedparser's own sanitizer and URI resolver both stay off: the
+        # bleach cleaner in sanitize_html() is the single policy point,
+        # lost_content_tags() must see the raw markup, and the resolver
+        # resolves against the feed url (wrong for posts in
+        # subdirectories) while also turning plain #anchors into links
+        # to the feed document.  Feed-level fields such as the entry
+        # link are resolved by feedparser either way.
+        feed = feedparser.parse(feed_url, resolve_relative_uris=False,
                                 sanitize_html=False)
+        # Fallback base for entries that carry no usable link.  A local
+        # file path is not an address, so such feeds keep their URLs as
+        # written.
+        feed_base = (feed_url if urlparse(feed_url).scheme in ("http", "https")
+                     else "")
         
         problem = _feed_problem(feed_url, feed)
         if problem:
@@ -370,8 +393,14 @@ def fetch_all_items(config):
             summary = (entry.get("summary", "") if prefer_summary
                        else content_or_summary(entry))
             removed = lost_content_tags(summary)
-            if resolve_urls:
-                summary = make_urls_absolute(summary, link)
+            # Everything leaves this function with absolute URLs: a
+            # relative one on a planet page would resolve against the
+            # planet rather than the blog it came from, and the
+            # aggregated Atom feed forbids them outright.  URLs inside a
+            # post resolve against that post's own link, which is the
+            # base blogs with posts in subdirectories need; an entry
+            # without a usable link falls back to the feed url.
+            summary = make_urls_absolute(summary, _item_base(link, feed_base))
             # Single sanitization point: feed-supplied HTML passes
             # bleach exactly once, so the HTML view and the aggregated
             # Atom feed always enforce one and the same policy.
@@ -496,6 +525,23 @@ def generate_html_view(items, output_file, template_dir, config):
     print(f"Generated HTML view: {output_file} ({len(html_items)} items)")
 
 
+def localize_site_assets(config, fetcher=None):
+    """Cache the site-level images named by the config itself.
+
+    The favicon and the logo are the operator's own URLs rather than a
+    feed's, so they are localized whether or not image caching is on: a
+    remote one is fetched by the build and served from the same origin,
+    and one the build cannot take is dropped rather than left for the
+    visitor to load.  Stylesheets (``output.css``) are deliberately not
+    fetched at all -- those are loaded by the visitor from wherever the
+    config points, and a config is trusted input.
+    """
+    for key in ("favicon", "logo"):
+        if config["output"].get(key):
+            config["output"][key] = localize_site_image(
+                config["output"][key], config, fetcher)
+
+
 def main(argv=None):
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -513,9 +559,7 @@ def main(argv=None):
         print("Localizing feed images...")
         localize_images(items, config)
 
-    favicon = config["output"].get("favicon", "")
-    if favicon:
-        config["output"]["favicon"] = localize_site_image(favicon, config)
+    localize_site_assets(config)
 
     print("Generating Atom feed...")
     generate_atom_feed(items, config["output"]["atom_feed"], config)
