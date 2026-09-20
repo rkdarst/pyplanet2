@@ -18,10 +18,14 @@ Features:
 * Configuration via a yaml file.
 * Outputs a .html for viewing and atom.xml for feed readers.
 * Easy usage by Github Pages and similar.
-* Extensive HTML sanitization (should err on the side of caution, but
-  it is AI-generated so please report problems you notice)
-* Caching images for privacy and to reduce web traffic of upstream
-  feeds (this is a bit fragile, validate it works for each feed).
+* Privacy and security
+  * Extensive HTML sanitization to remove interactive and remote
+    elements.
+  * Caching images for privacy and to reduce web traffic of upstream
+    feeds
+  * Still, both of the above are a bit fragile and machine-generated.
+    They can be considered "nice for semi-trusted users" but not good
+    enough for dedicated attackers.
 * Templating with jinja2 and custom CSS may be inserted which should
   allow you to override any config.  Note the config and format may
   not be very stable right now.
@@ -37,7 +41,7 @@ standards.  Large auto-generated pull requests won't be reviewed
 machine-generated, it is CC-0 and you are welcome to fork and develop
 further.
 
-**Everything about this line is written by a human.  Everything below
+**Everything above this line is written by a human.  Everything below
 is generated content ("AI") and you should adjust your reading to
 match.**
 
