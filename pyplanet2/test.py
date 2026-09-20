@@ -307,6 +307,62 @@ def test_removed_content_note_in_atom_feed(tmp_path):
     assert xml.index("consider seeing") < xml.index("body")  # leads entry
 
 
+def test_enclosure_is_noted_as_lost_content():
+    """An enclosure is an attachment outside the entry's HTML, which
+    the sanitizer never sees: the page cannot show it, so it is dropped
+    with a note naming its kind, and a post without one stays silent."""
+    by_title = {item["title"]: item
+                for item in fetch_all_items(rss_config())}
+    assert by_title["First item title"]["removed_content"] == ["audio"]
+    assert "audio" not in by_title["Mixed Media Demo"]["removed_content"]
+
+
+def test_enclosure_url_reaches_no_visitor(tmp_path):
+    """The attachment the note speaks of is neither fetched nor linked:
+    naming its url in either view would send the reader to a host this
+    build vouched for nothing."""
+    config = theming_config(tmp_path)
+    config["feeds"] = [{"feed": str(REPO / "test-data" / "rss.xml"),
+                        "name": "RSS test"}]
+    items = fetch_all_items(config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR, config)
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    page = Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+    xml = Path(config["output"]["atom_feed"]).read_text(encoding="utf-8")
+    assert "demo.mp3" not in page and "demo.mp3" not in xml
+    assert "(audio)" in page and "(audio)" in xml  # dropped, and said so
+
+
+def test_atom_enclosure_link_is_noted(tmp_path):
+    """The Atom form of an attachment -- a link with rel="enclosure" --
+    reaches the same note as the RSS element does."""
+    feed = tmp_path / "podcast.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+        '<entry><title>p</title><link href="https://x.example/p"/>'
+        '<link rel="enclosure" href="https://x.example/p.mp4" type="video/mp4"/>'
+        '<id>1</id><updated>2026-01-01T00:00:00Z</updated>'
+        '<content type="html">&lt;p&gt;show notes&lt;/p&gt;</content>'
+        '</entry></feed>', encoding="utf-8")
+    items = fetch_all_items({"feeds": [{"feed": str(feed)}]})
+    assert items[0]["removed_content"] == ["video"]
+
+
+def test_untyped_enclosure_reads_as_attachment(tmp_path):
+    """An attachment whose type this program has no word for is still
+    not allowed to vanish without a trace."""
+    feed = tmp_path / "epub.xml"
+    feed.write_text(
+        '<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>'
+        '<item><title>e</title><link>https://x.example/e</link>'
+        '<description>text</description>'
+        '<enclosure url="https://x.example/e.epub" type="application/epub+zip"/>'
+        '<pubDate>Thu, 05 Sep 2002 0:00:01 GMT</pubDate>'
+        '</item></channel></rss>', encoding="utf-8")
+    items = fetch_all_items({"feeds": [{"feed": str(feed)}]})
+    assert items[0]["removed_content"] == ["attachment"]
+
+
 @pytest.mark.parametrize("shape", [
     "javascript:1",
     "javascript:alert(1)",

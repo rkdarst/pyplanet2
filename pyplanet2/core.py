@@ -327,9 +327,11 @@ def fetch_all_items(config):
     datetime), "feed_title", "site", "icon" (plain strings,
     "" when unset), "title", "link" (scheme-checked by safe_link),
     "summary" (sanitized HTML), "feed_id" (index of the feed in the
-    config) and "removed_content" (the sorted names of dropped
-    elements when the sanitizer lost content readers would miss,
-    empty when nothing was lost).  localize_images() may
+    config) and "removed_content" (the sorted, lowercased labels for
+    content readers would miss: the names of elements the sanitizer
+    dropped, the notes localize_images() adds for images it could not
+    bring into the cache, and the attachments an entry carries outside
+    its HTML; empty when nothing was lost).  localize_images() may
     add "img_map".
 
     Every URL that leaves here is absolute -- "link" and the URLs
@@ -393,6 +395,19 @@ def fetch_all_items(config):
             summary = (entry.get("summary", "") if prefer_summary
                        else content_or_summary(entry))
             removed = lost_content_tags(summary)
+            # Attachments a feed carries outside the entry's HTML -- an
+            # RSS <enclosure> or the Atom link with rel="enclosure" --
+            # are invisible to the sanitizer, so they are handled here:
+            # the page cannot show them, so they are dropped like any
+            # other lost content (never fetched, never linked, and so
+            # no URL of them reaches a visitor) and named in the same
+            # note.  "audio"/"video" reuse the element vocabulary;
+            # anything else reads as a plain "attachment".
+            for enclosure in entry.get("enclosures") or []:
+                kind = (enclosure.get("type") or "").split("/")[0].lower()
+                removed.append(kind if kind in ("audio", "video")
+                               else "attachment")
+            removed = sorted(set(removed), key=str.lower)
             # Everything leaves this function with absolute URLs: a
             # relative one on a planet page would resolve against the
             # planet rather than the blog it came from, and the

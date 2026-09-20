@@ -302,6 +302,12 @@ other, because what the build could not verify is taken out of the page
 -- kept remote, a feed could otherwise send every visitor's browser to
 `http://192.168.0.1/` and have them probe their own network.
 
+The guard covers what a feed *names*: the images in its posts, plus the
+favicon and logo the config points at.  The feed URLs themselves are
+fetched by feedparser, without that guard and without a redirect
+re-check -- they are config input, which is trusted, and a visitor
+loads nothing from them.
+
 ### Security model of the cache
 
 Five separate layers stand between a hostile feed and script running
@@ -344,7 +350,10 @@ both the HTML view and the aggregated Atom feed enforce exactly the
 same policy.  Embedded content the sanitizer cannot keep at all
 (video, audio, graphics such as SVG, forms) is detected by element
 type, and both output views then lead the post with a note naming
-the dropped elements -- a removed player is never a silent hole.  Every `href`/`src` in summaries and every post link is
+the dropped elements -- a removed player is never a silent hole.  Attachments carried outside an entry's HTML -- an RSS `<enclosure>` or
+the Atom link with `rel="enclosure"` -- are named in that same note as
+`audio`, `video` or `attachment`: they are never fetched and never
+linked.  Every `href`/`src` in summaries and every post link is
 additionally checked against a scheme allow-list (http, https,
 relative URLs, mailto) using browser-equivalent URL cleaning, so
 malformed shapes like `java`+tab+`script:` cannot slip through;
