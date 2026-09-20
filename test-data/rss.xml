@@ -38,6 +38,7 @@ protocol="soap"/>
 &lt;span style="background: url(javascript:window.location=’http://example.org/’)"&gt;
 nasty tricks&lt;/span&gt;
 &lt;img src="../images/pic.png" alt="pic"&gt;
+&lt;img src="https://raw.githubusercontent.com/rkdarst/pyplanet2/refs/heads/master/static/image.png" alt="an image given by absolute URL, cached like any other"&gt;
 &lt;a href="../about.html"&gt;about&lt;/a&gt;
 </description>
 <author>mark@example.org</author>
