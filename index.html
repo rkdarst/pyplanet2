@@ -135,7 +135,7 @@
   </header>
 
   <main class="planet">
-    <p class="generated">Generated <span class="generated-at">2026-09-20T12:30:09+00:00</span> ·
+    <p class="generated">Generated <span class="generated-at">2026-09-20T13:18:41+00:00</span> ·
       <a class="feed-link" href="https://rkdarst.github.io/pyplanet2/atom.xml">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
     
@@ -149,6 +149,9 @@
         <li><a href="example.org">RSS test</a>
           (<a class="feed-ref" href="test-data/rss.xml">feed</a>)</li>
         
+        <li><a href="example.org">ATOM relative test</a>
+          (<a class="feed-ref" href="test-data/atom-relative.xml">feed</a>)</li>
+        
       </ul>
     </aside>
     
@@ -157,14 +160,34 @@
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="example.org">
-        <div class="post-icon icon-placeholder"></div></a>
+        <img class="post-icon" src="static/icon.png" alt="ATOM relative test"></a>
+        <div>
+          <h1 class="post-title"><a class="post-link" href="https://blog.example.org/2026/09/post.html">Item with relative URLs</a></h1>
+          <div class="post-meta">
+            <span class="feed-title"><a href="example.org">ATOM relative test</a></span>
+            <span class="post-date">2026-09-01 10:00 UTC</span>
+          </div>
+          <p class="content-note">Some embedded content from this post is not shown here (image unavailable) - consider seeing the original post.</p>
+        </div>
+      </div>
+      
+      <div class="summary"><p><a href="https://blog.example.org/2026/about.html">about</a>
+     
+    <a href="#anchor">same page</a>
+    <a href="https://cdn.example.org/x.png">cdn</a></p></div>
+      <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
+      
+    </article>
+    
+    <article class="post">
+      <div class="post-header"><a class="post-icon-link" href="example.org">
+        <img class="post-icon" src="images-cached/93db0d4fdbcb7a5d.png" alt="Atom test"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="http://example.org/2003/12/13/atom03">Atom-Powered Robots Run Amok</a></h1>
           <div class="post-meta">
             <span class="feed-title"><a href="example.org">Atom test</a></span>
             <span class="post-date">2003-12-13 18:30 UTC</span>
           </div>
-          <p class="content-note">Some embedded content from this post is not shown here (image unavailable) - consider seeing the original post.</p>
         </div>
       </div>
       
@@ -175,7 +198,7 @@
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="example.org">
-        <img class="post-icon" src="static/icon.png" alt="RSS test"></a>
+        <img class="post-icon" src="images-cached/93db0d4fdbcb7a5d.png" alt="RSS test"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="http://example.org/item/1">First item title</a></h1>
           <div class="post-meta">
@@ -190,6 +213,7 @@
 <span>
 nasty tricks</span>
 
+<img src="images-cached/24acba11f9d8a79c.png" alt="an image given by absolute URL, cached like any other">
 <a href="http://example.org/about.html">about</a></div>
       <button type="button" class="expand-toggle" aria-expanded="false">Expand &#9662;</button>
       
@@ -197,7 +221,7 @@ nasty tricks</span>
     
     <article class="post">
       <div class="post-header"><a class="post-icon-link" href="example.org">
-        <img class="post-icon" src="static/icon.png" alt="RSS test"></a>
+        <img class="post-icon" src="images-cached/93db0d4fdbcb7a5d.png" alt="RSS test"></a>
         <div>
           <h1 class="post-title"><a class="post-link" href="http://example.org/2002/09/04/mixed.html">Mixed Media Demo</a></h1>
           <div class="post-meta">
