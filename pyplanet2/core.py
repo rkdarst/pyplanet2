@@ -12,7 +12,9 @@ import base64
 import html
 import os
 import re
+import socket
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from html.parser import HTMLParser
@@ -26,6 +28,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from .imagecache import (localize_images, localize_site_image, prune_cache,
                          rewrite_images)
+from .mdrender import render_markdown
 
 def load_config(path):
     """Load configuration from a YAML file."""
@@ -39,6 +42,35 @@ def load_config(path):
 
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+# How the build talks to the feed servers.  feedparser takes no timeout
+# argument, urllib takes one only from the socket default, and neither
+# retries, so without these a silent or briefly unreachable host would
+# either stop a build or cost a day of posts.
+FEED_TIMEOUT = 10         # seconds to wait for a feed host that says nothing
+FEED_RETRIES = 2          # extra attempts at a remote feed before skipping it
+FEED_RETRY_WAIT = 2.0     # seconds to give the host between those attempts
+
+
+def write_atomic(output_file, text):
+    """Write text to output_file through a sibling .part file.
+
+    The page and the feed are published as a pair, so a build that dies
+    partway through one of them -- a full disk, a runner cancelled
+    mid-push -- should leave the last complete file standing rather than
+    a truncated one for a visitor to half-render.  The image cache has
+    always written its files and its index this way; this is the same
+    move for the two documents the site is made of.
+    """
+    path = Path(output_file)
+    part = path.with_name(path.name + ".part")
+    try:
+        part.write_text(text, encoding="utf-8")
+        os.replace(part, path)
+    except BaseException:
+        part.unlink(missing_ok=True)  # our own file, beside the output
+        raise
+
 
 # Keys every config must carry; dotted paths mirror how they are read.
 REQUIRED_KEYS = (
@@ -85,6 +117,16 @@ def validate_config(config):
     if not any((d / template).is_file() for d in search):
         print(f"ERROR: HTML template '{template}' not found (looked in: "
               + ", ".join(str(d) for d in search) + ")", file=sys.stderr)
+        sys.exit(1)
+    # An absent intro is simply no intro; a wrong-shaped one is a block
+    # scalar written wrong (`intro: - one` parses as a list), which the
+    # renderer would take as a plain string and mangle.
+    intro = config["site"].get("intro")
+    if intro is not None and not isinstance(intro, str):
+        print("ERROR: config key site.intro must be markdown text, "
+              "normally a block scalar:\n"
+              "  site:\n    intro: |\n      What this site is about.",
+              file=sys.stderr)
         sys.exit(1)
     return config
 
@@ -340,6 +382,12 @@ def fetch_all_items(config):
     ever has to guess what a relative URL was meant to point at.  The
     lone exception is a feed configured as a local file path, which
     carries no address to resolve against.
+
+    Every feed is announced as it is tried and reported as it ends, and
+    the run finishes with a count of what loaded.  A remote feed that
+    cannot be read is retried FEED_RETRIES times before it is skipped;
+    main() installs FEED_TIMEOUT as the socket default that bounds the
+    wait for a host that says nothing.
     """
     # Optional pool-wide age filter (0/unset = keep all ages); applies
     # to every output.  Undated posts fall back to epoch and thus age
@@ -349,9 +397,13 @@ def fetch_all_items(config):
               if age_days else None)
 
     items = []
+    total = len(config["feeds"])
+    skipped = []
 
     for feed_id, feed_config in enumerate(config["feeds"]):
         feed_url = feed_config["feed"]
+        print(f"[{feed_id + 1}/{total}] {feed_url}", flush=True)
+        kept_before = len(items)
         # prefer_summary: use the short Atom <summary> even when the
         # entry also carries full <content> (default: full text wins).
         prefer_summary = feed_config.get("prefer_summary", False)
@@ -362,15 +414,37 @@ def fetch_all_items(config):
         # subdirectories) while also turning plain #anchors into links
         # to the feed document.  Feed-level fields such as the entry
         # link are resolved by feedparser either way.
-        feed = feedparser.parse(feed_url, resolve_relative_uris=False,
-                                sanitize_html=False)
+        # One parse per attempt.  A remote feed gets its mistakes back:
+        # a single timeout or 5xx should not cost a day of posts.  A
+        # local file is the same bytes on the next attempt, so only the
+        # "skip" kind -- the network -- is ever retried.
+        for attempt in range(FEED_RETRIES + 1):
+            try:
+                feed = feedparser.parse(feed_url, resolve_relative_uris=False,
+                                        sanitize_html=False)
+            except OSError as exc:
+                # urllib wraps a failed request in URLError, which
+                # feedparser records, but lets a read timeout escape as a
+                # bare exception -- where it would abort the build, the
+                # very thing the timeout exists to prevent.  Hand back
+                # the unreadable-feed result feedparser would otherwise
+                # have returned, and let _feed_problem() skip it.
+                feed = feedparser.FeedParserDict(bozo=True, entries=[],
+                                                 bozo_exception=exc)
+            problem = _feed_problem(feed_url, feed)
+            if (problem is None or problem[0] != "skip"
+                    or attempt >= FEED_RETRIES):
+                break
+            print(f"    failed ({problem[1]}), retrying in "
+                  f"{FEED_RETRY_WAIT:g} s: attempt {attempt + 2} of "
+                  f"{FEED_RETRIES + 1}", flush=True)
+            time.sleep(FEED_RETRY_WAIT)
         # Fallback base for entries that carry no usable link.  A local
         # file path is not an address, so such feeds keep their URLs as
         # written.
         feed_base = (feed_url if urlparse(feed_url).scheme in ("http", "https")
                      else "")
         
-        problem = _feed_problem(feed_url, feed)
         if problem:
             kind, reason = problem
             if kind == "fatal":
@@ -378,9 +452,20 @@ def fetch_all_items(config):
                 _annotate("error", f"{feed_url}: {reason}")
                 sys.exit(1)
             print(f"WARNING: feed skipped (continuing without it): "
-                  f"{feed_url} -- {reason}")
+                  f"{feed_url} -- {reason}", flush=True)
             _annotate("warning", f"{feed_url}: {reason}")
+            skipped.append(feed_url)
             continue
+        if feed.bozo:
+            # Entries survived a document that did not parse to the end,
+            # so the feed contributes what it gave.  Say so: the rest of
+            # its posts are missing, and a silent short feed is the one
+            # failure that looks exactly like success.
+            reason = str(getattr(feed, "bozo_exception", "")
+                         or "unparsable feed")
+            print(f"WARNING: feed incomplete, using the {len(feed.entries)} "
+                  f"entries that parsed: {feed_url} -- {reason}", flush=True)
+            _annotate("warning", f"{feed_url}: incomplete feed: {reason}")
 
         # Display title: the locally configured name only -- a feed's
         # own <title> is remote input and never displayed (validate
@@ -437,6 +522,23 @@ def fetch_all_items(config):
                 "removed_content": removed,
             })
 
+        kept = len(items) - kept_before
+        if not feed.entries:
+            print("    feed has no entries", flush=True)
+        elif kept:
+            print(f"    {kept} item(s) kept", flush=True)
+        else:
+            print(f"    all {len(feed.entries)} entries filtered out "
+                  "(limits.max_age_days)", flush=True)
+
+    if skipped:
+        print(f"Feeds: {total - len(skipped)} of {total} loaded, "
+              f"{len(skipped)} skipped:", flush=True)
+        for url in skipped:
+            print(f"    {url}")
+    else:
+        print(f"Feeds: all {total} loaded", flush=True)
+
     # Sort by date, newest first
     items.sort(key=lambda x: x["dt"], reverse=True)
     return items
@@ -478,8 +580,58 @@ def generate_atom_feed(items, output_file, config):
             author_name=item["feed_title"],
         )
 
-    Path(output_file).write_text(feed.writeString("utf-8"), encoding="utf-8")
+    write_atomic(output_file, feed.writeString("utf-8"))
     print(f"Generated Atom feed: {output_file} ({len(feed_items)} items)")
+
+
+INTRO_IMAGE_RE = re.compile(r"<img\b[^>]*>", re.I)
+INTRO_SRC_RE = re.compile(r"""\bsrc=["']([^"']*)["']""", re.I)
+
+
+def _is_page_local(url):
+    """True for a path the page loads from its own origin, as opposed to
+    a URL naming somewhere else.  Absolute paths and relative ones both
+    qualify; a scheme or a host, even the site's own, does not."""
+    parts = urlparse(_browser_url(url))
+    return not parts.scheme and not parts.netloc
+
+
+def render_site_intro(config):
+    """HTML for the config's own note (``site.intro``), or "" if unset.
+
+    The config is trusted input, but its markup still passes the
+    sanitizer a feed's HTML passes, so one policy decides which tag may
+    appear on the page: a <script> that wandered into a config stays out
+    of a reader's browser instead of becoming an exception nobody wrote
+    down.
+
+    Images are the one tag that would send a visitor to a host the build
+    never saw, which is the whole thing the page is built to avoid, so a
+    remote one is dropped here rather than left for the browser to
+    fetch.  A path to a file beside the page is kept; a picture of the
+    site itself belongs in ``output.logo``, which is fetched and cached.
+    """
+    html = sanitize_html(render_markdown(config["site"].get("intro", "")))
+
+    # subn() would count a tag left untouched as a substitution, so the
+    # drops are collected by name: the author needs to know which one.
+    dropped = []
+
+    def keep_only_local(match):
+        tag = match.group(0)
+        src = INTRO_SRC_RE.search(tag)
+        if src and src.group(1) and _is_page_local(src.group(1)):
+            return tag
+        dropped.append(src.group(1) if src else "(no source given)")
+        return ""
+
+    html = INTRO_IMAGE_RE.sub(keep_only_local, html)
+    if dropped:
+        print(f"Warning: dropped {len(dropped)} image(s) from site.intro that "
+              "another host would have had to serve ("
+              + ", ".join(dropped) + "); use a path beside the page, or "
+              "output.logo")
+    return html
 
 
 def generate_html_view(items, output_file, template_dir, config):
@@ -526,9 +678,13 @@ def generate_html_view(items, output_file, template_dir, config):
               "site": fc.get("site", fc["feed"]),
               "icon": fc.get("icon", "")} for fc in config["feeds"]]
 
+    # The site's own note, rendered above the first post.
+    intro = render_site_intro(config)
+
     html_content = template.render(
         posts=html_items,
         feeds=feeds,
+        intro=intro,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         site_title=config["site"]["title"],
         css_files=config["output"].get("css", []),
@@ -537,11 +693,11 @@ def generate_html_view(items, output_file, template_dir, config):
         atom_feed_url=config["site"]["atom_feed_url"]
     )
 
-    Path(output_file).write_text(html_content, encoding="utf-8")
+    write_atomic(output_file, html_content)
     print(f"Generated HTML view: {output_file} ({len(html_items)} items)")
 
 
-def localize_site_assets(config, fetcher=None):
+def localize_site_assets(config, fetcher=None, verbose=False):
     """Cache the site-level images named by the config itself.
 
     The favicon and the logo are the operator's own URLs rather than a
@@ -559,7 +715,8 @@ def localize_site_assets(config, fetcher=None):
     for key in ("favicon", "logo"):
         url = config["output"].get(key)
         if url:
-            config["output"][key] = localize_site_image(url, config, fetcher)
+            config["output"][key] = localize_site_image(url, config, fetcher,
+                                                        verbose)
             if config["output"][key]:
                 touched.add(url)
     return touched
@@ -570,20 +727,43 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Blog aggregator: combines RSS feeds into an Atom feed and HTML view.")
     parser.add_argument("config", help="path to config file (required)")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="name every image the build looks at and what "
+                             "became of it: caching, already cached or not "
+                             "caching")
     args = parser.parse_args(argv)
 
     config = validate_config(load_config(args.config))
 
-    print("Fetching feeds...")
+    # The socket default is the only timeout feedparser honours, so this
+    # line is the whole of it: without it a host that accepts the
+    # connection and then says nothing is waited on forever.  Nothing
+    # else in a build opens a socket without an explicit timeout -- the
+    # image fetcher passes its own -- and it is set here rather than at
+    # import so importing this package leaves a program's own default
+    # alone.  It bounds each socket operation, so a host that trickles
+    # bytes can still stretch the total: the wait is on silence, not on
+    # the transfer.
+    socket.setdefaulttimeout(FEED_TIMEOUT)
+
+    print(f"Fetching feeds... (timeout {FEED_TIMEOUT} s, "
+          f"{FEED_RETRIES} retries)")
     items = fetch_all_items(config)
     print(f"Total items fetched: {len(items)}")
 
     touched = set()
     if config.get("images"):
         print("Localizing feed images...")
-        touched |= set(localize_images(items, config))
+    else:
+        # The opt-out, said out loud: nothing is fetched, so every image
+        # in a post stays exactly as the feed wrote it and the visitor
+        # loads it from the feed's own host.  Worth a line -- a build can
+        # otherwise look like it caches images while leaking the visitor
+        # to a hundred hosts.  localize_images() names each one under -v.
+        print("Image caching is off: images load from their own hosts")
+    touched |= set(localize_images(items, config, verbose=args.verbose))
 
-    touched |= localize_site_assets(config)
+    touched |= localize_site_assets(config, verbose=args.verbose)
 
     # Pruning last, and told what the two passes above kept a copy for:
     # the images the output is about to link are never deleted, whatever

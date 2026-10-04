@@ -1,7 +1,8 @@
 {#- Overridable blocks for theme templates (see README "Customizing
     the HTML view"): title, styles, head_extra, header, generated_info,
-    posts, post, post_icon, post_meta, post_summary, sidebar (right-side
-    feed list), footer, scripts. -#}
+    sidebar (the feed list), intro (the site's own note, from
+    site.intro), posts, post, post_icon, post_meta, post_summary,
+    footer, scripts. -#}
 <!doctype html>
 <html lang="en">
 <head>
@@ -46,6 +47,21 @@
     .logo-placeholder { width: 72px; height: 72px; background: var(--line); }
     .site-title { margin: 0; font-size: 2.25em; color: var(--brand); }
     .generated { margin: 1em 0 0; font-size: 0.85em; color: var(--muted); }
+    /* site.intro: the operator's own note, so it is plain page prose --
+       the measure and the text color it already has, with the first and
+       last margins trimmed so it neither gaps nor shoves the rule. */
+    .intro { margin: 1.5em 0; padding-bottom: 1.25em;
+             border-bottom: 1px solid var(--line); }
+    .intro > :first-child { margin-top: 0; }
+    .intro > :last-child { margin-bottom: 0; }
+    .intro h2 { font-size: 1.3em; margin: 1.1em 0 0.4em; }
+    .intro h3 { font-size: 1.1em; margin: 1.1em 0 0.4em; }
+    .intro h4, .intro h5, .intro h6 { font-size: 1em; margin: 1.1em 0 0.4em; }
+    .intro blockquote { margin: 1em 0; padding-left: 1em; color: var(--muted);
+                        border-left: 3px solid var(--line); }
+    .intro pre { margin: 1em 0; padding: 0.6em 0.8em; border-radius: 6px;
+                 background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+                 overflow-x: auto; }
     .post { padding: 1em 1.25em; margin-bottom: 1.25em;
             border: 1px solid var(--line); border-radius: 8px; }
     .post-header { display: flex; align-items: center; gap: 0.75em;
@@ -110,6 +126,12 @@
     body:has(.feeds-sidebar) { max-width: 62.5em; }
     main.planet > .generated { grid-column: 1 / -1; }
     main.planet > .post-flow { grid-column: 1; }
+    /* A site note spans the page like the generated line.  Left to
+       auto-placement it would take the first free cell, which is the
+       row the feed sidebar is pinned to, so the sidebar steps one row
+       down: it belongs beside the posts, not beside the note. */
+    main.planet > .intro { grid-column: 1 / -1; }
+    main.planet:has(> .intro) > .feeds-sidebar { grid-row: 3; }
     main.planet > .feeds-sidebar { grid-column: 2; grid-row: 2;
         padding: 0.75em 1em; border: 1px solid var(--line);
         border-radius: 8px; font-size: 0.85em; overflow-wrap: break-word; }
@@ -122,7 +144,8 @@
          below oversized feed content, which the guards above and
          below then clamp -- plain 1fr would stretch the whole page. */
       main.planet:has(> .feeds-sidebar) { grid-template-columns: minmax(0, 1fr); }
-      main.planet > .feeds-sidebar { grid-column: 1; grid-row: auto; }
+      main.planet > .feeds-sidebar,
+      main.planet:has(> .intro) > .feeds-sidebar { grid-column: 1; grid-row: auto; }
     }
   </style>
   {%- endblock %}
@@ -153,6 +176,14 @@
     <p class="generated">Generated <span class="generated-at">{{ generated_at }}</span> ·
       <a class="feed-link" href="{{ atom_feed_url }}">Atom feed</a> ·
       This page and feed are sanitized for security, formatting may be wrong.</p>
+    {%- endblock %}
+
+    {%- block intro scoped %}
+    {% if intro %}
+    {#- The site's own words, from site.intro in the config, already put
+        through the same sanitizer a feed's HTML is put through. #}
+    <div class="intro">{{ intro|safe }}</div>
+    {% endif %}
     {%- endblock %}
 
     {%- block sidebar %}

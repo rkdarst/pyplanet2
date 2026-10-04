@@ -8,13 +8,16 @@ import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
+import feedparser
 import pytest
 import yaml
 
@@ -24,6 +27,7 @@ from pyplanet2.core import (TEMPLATE_DIR, fetch_all_items,
                                 validate_config)
 from pyplanet2 import core, imagecache
 from pyplanet2.imagecache import localize_images, rewrite_images
+from pyplanet2.mdrender import render_markdown
 
 REPO = Path(__file__).parent.parent  # tests live in pyplanet2/ of the checkout
 
@@ -484,6 +488,7 @@ def test_remote_feed_failure_warns_and_continues(tmp_path, monkeypatch, capsys):
         return real_parse(url, **kwargs)
 
     monkeypatch.setattr(core.feedparser, "parse", fake_parse)
+    monkeypatch.setattr(core.time, "sleep", lambda s: None)  # no retry waits
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     items = fetch_all_items({"feeds": [
         {"feed": "http://dead.example/feed.xml"},
@@ -493,6 +498,7 @@ def test_remote_feed_failure_warns_and_continues(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "WARNING: feed skipped" in out
     assert "::warning title=pyplanet2::" in out
+    assert "retrying in" in out  # a remote failure gets its retries first
 
 
 def test_valid_empty_feed_is_silent(tmp_path, capsys):
@@ -593,6 +599,153 @@ def test_feed_name_required_and_template_check(tmp_path, capsys):
         validate_config(config)
     err = capsys.readouterr().err
     assert "nope.html" in err and "not found" in err
+
+
+# --- the site's own note (site.intro) ------------------------------------
+
+def build_page(tmp_path, config):
+    """Fetch, render and hand back the HTML page for a config."""
+    generate_html_view(fetch_all_items(config), config["output"]["html_view"],
+                       TEMPLATE_DIR, config)
+    return Path(config["output"]["html_view"]).read_text(encoding="utf-8")
+
+
+def intro_of(page):
+    """Just the rendered note, so a test cannot pass on page furniture:
+    from its div up to whatever follows it in the page (the feed sidebar
+    or, when a theme moved it, the post flow)."""
+    start = page.index('<div class="intro">')
+    ends = [n for n in (page.find('<aside class="feeds-sidebar">', start),
+                        page.find('<div class="post-flow">', start))
+            if n != -1]
+    return page[start:min(ends)]
+
+
+def test_intro_sits_above_the_first_post(tmp_path):
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = "What this page is.\n\n*Rules* apply."
+    page = build_page(tmp_path, config)
+    assert page.index('<div class="intro">') < page.index('<article class="post"')
+    assert "<em>Rules</em>" in intro_of(page)
+
+
+def test_an_unset_or_blank_intro_adds_nothing(tmp_path):
+    """No key and an empty one are the same page: a config that carries
+    `intro: ""` should not leave an empty box with a rule under it."""
+    assert 'class="intro"' not in build_page(tmp_path, theming_config(tmp_path))
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = "  \n \n"
+    assert 'class="intro"' not in build_page(tmp_path, config)
+
+
+def test_intro_headings_sit_under_the_page_title(tmp_path):
+    """A note opening with `#` would otherwise outrank the site title,
+    so every heading comes out one level down, six as the floor."""
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = "# One\n\n## Two\n\n###### Six"
+    intro = intro_of(build_page(tmp_path, config))
+    assert "<h2>One</h2>" in intro and "<h3>Two</h3>" in intro
+    assert "<h6>Six</h6>" in intro
+    assert "<h1>" not in intro
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("plain **bold** *em* `code`", "<strong>bold</strong>"),
+    ("[a blog](https://x.example/)", '<a href="https://x.example/">a blog</a>'),
+    ("- one\n- two", "<ul>"),
+    ("1. one\n2. two", "<ol>"),
+    ("> wisdom", "<blockquote>"),
+    ("---", "<hr"),
+    ("```\nfenced\n```", "<pre><code>fenced"),
+    ("one\n\nthree", "<p>one</p>"),
+])
+def test_intro_markdown_renders_as_markup(text, expected):
+    """The syntax the README promises a config can actually use."""
+    assert expected in render_markdown(text)
+
+
+def test_intro_markdown_in_the_page_keeps_its_structure(tmp_path):
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = ("Aggregated reading from a few blogs.\n\n"
+                               "## Rules\n\n- [email](mailto:me@example.com)\n"
+                               "    - link back instead\n\n> wisdom\n")
+    intro = intro_of(build_page(tmp_path, config))
+    assert "<h3>Rules</h3>" in intro          # ## under the page title
+    assert '<a href="mailto:me@example.com">email</a>' in intro
+    assert intro.count("<ul>") == 2           # the indented item nested
+    assert "<li>link back instead</li>" in intro
+    assert "<blockquote>\n<p>wisdom</p>" in intro
+
+
+def test_an_intro_image_must_be_a_path_beside_the_page(tmp_path, capsys):
+    """A note is prose, but an image inside one is still a URL a browser
+    dials against a host the build never met -- the one hole in an
+    otherwise local page.  A path stays, a URL goes, and the build says
+    which and why."""
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = ("![our badge](badge.png)\n\n"
+                               "![elsewhere](https://x.example/pic.png)\n")
+    intro = intro_of(build_page(tmp_path, config))
+    assert 'src="badge.png"' in intro
+    assert "x.example" not in intro
+    out = capsys.readouterr().out
+    assert "1 image(s)" in out and "https://x.example/pic.png" in out
+
+
+def test_config_markup_passes_the_feed_s_policy(tmp_path):
+    """The note is the operator's own text and the config is trusted, but
+    it goes through the sanitizer a feed's HTML goes through: one policy
+    decides what may appear on the page, with no exception to forget."""
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = ('Safe <b>bold</b>.\n\n'
+                               '<script>alert(1)</script>\n\n'
+                               '[click](javascript:alert(2)) '
+                               '<iframe src="https://x.example/"></iframe>')
+    page = build_page(tmp_path, config)
+    intro = intro_of(page)
+    assert "<b>bold</b>" in intro
+    assert "alert(1)" not in page and "alert(2)" not in page
+    assert "<iframe" not in page          # the tag; the CSS names it below
+    assert "<a>" in intro                 # the link stands, its href gone
+
+
+def test_a_wrong_shaped_intro_stops_the_build(tmp_path, capsys):
+    """`intro: - one` is a YAML sequence, not a block scalar; say so
+    before the renderer makes a mess of a list."""
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = ["one", "two"]
+    with pytest.raises(SystemExit):
+        validate_config(config)
+    assert "site.intro" in capsys.readouterr().err
+
+
+def test_a_theme_can_move_the_note(tmp_path):
+    """intro is a block, so where a site note belongs stays a theme's
+    business rather than one opinion baked into the base template."""
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    (themes / "low.html").write_text(
+        '{% extends "planet.html" %}\n'
+        '{% block intro %}{% endblock %}\n'
+        '{% block footer %}<footer class="note">{{ intro }}</footer>'
+        '{% endblock %}\n', encoding="utf-8")
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = "Below everything."
+    config["paths"] = {"template_dir": str(themes), "template": "low.html"}
+    page = build_page(tmp_path, config)
+    assert 'class="intro"' not in page
+    assert "Below everything." in page
+
+
+def test_the_note_belongs_to_the_page_not_the_feed(tmp_path):
+    """The Atom feed carries no intro on purpose: feedgenerator escapes
+    its subtitle, so markdown there would read as tags in a reader."""
+    config = theming_config(tmp_path)
+    config["site"]["intro"] = "Page only, never the feed."
+    generate_atom_feed(fetch_all_items(config), config["output"]["atom_feed"],
+                       config)
+    feed = Path(config["output"]["atom_feed"]).read_text(encoding="utf-8")
+    assert "Page only" not in feed
 
 
 def test_theme_extends_base_blocks(tmp_path):
@@ -699,10 +852,13 @@ def test_cli_end_to_end(tmp_path):
     # cwd in tmp_path so the run cannot depend on the repo layout;
     # PYTHONPATH makes the in-repo package importable without install
     env = {**os.environ, "PYTHONPATH": str(REPO)}
-    subprocess.run(
+    run = subprocess.run(
         [sys.executable, "-m", "pyplanet2", str(config_file)],
-        cwd=tmp_path, check=True, env=env,
+        cwd=tmp_path, check=True, env=env, capture_output=True, text=True,
     )
+    # every feed is named as it is tried, and the run says what loaded
+    assert "[1/2]" in run.stdout and "[2/2]" in run.stdout
+    assert "Feeds: all 2 loaded" in run.stdout
 
     html_text = (tmp_path / "planet.html").read_text(encoding="utf-8")
     assert "First item title" in html_text
@@ -1087,6 +1243,69 @@ def test_site_assets_are_cached(tmp_path):
     assert '<link rel="icon"' in page and 'class="logo"' in page
 
 
+def test_verbose_names_every_image_and_what_became_of_it(tmp_path, capsys):
+    """The question -v answers is "what did the cache do with this one":
+    the first build caches it and asks the host for it, the next finds
+    the copy and asks nothing at all."""
+    url = "https://img.example/a.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+
+    def fetch(u, headers):
+        return 200, b"PNG", {"content-type": "image/png"}
+
+    localize_images(items, img_config(tmp_path), fetcher=fetch, verbose=True)
+    out = capsys.readouterr().out
+    assert f"image caching: {url} (3 bytes)" in out
+    assert "already cached" not in out
+
+    localize_images(items, img_config(tmp_path), fetcher=fetch)
+    out = capsys.readouterr().out
+    assert "image caching" not in out and "already cached" not in out
+
+    localize_images(items, img_config(tmp_path), fetcher=fetch, verbose=True)
+    out = capsys.readouterr().out
+    assert f"image already cached: {url}" in out
+    assert "image caching" not in out
+
+
+def test_a_revalidated_image_counts_as_already_cached(tmp_path, capsys):
+    """A conditional request that changed nothing transfers nothing, which
+    is the point of the TTL, so it is not reported as a fresh download."""
+    url = "https://img.example/a.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+
+    def first(u, headers):
+        return 200, b"PNG", {"content-type": "image/png", "etag": '"v1"'}
+
+    localize_images(items, img_config(tmp_path), fetcher=first)
+
+    def unchanged(u, headers):
+        assert headers.get("If-None-Match") == '"v1"'  # it did ask
+        return 304, b"", {}
+
+    localize_images(items, img_config(tmp_path, ttl_days=0),
+                    fetcher=unchanged, verbose=True)
+    assert (f"image already cached: {url} (revalidated)"
+            in capsys.readouterr().out)
+
+
+def test_verbose_says_which_images_are_not_being_cached(tmp_path, capsys):
+    """With no images section nothing is fetched and every url stays as
+    the feed wrote it, so the visitor loads them: name them, rather than
+    leaving a build that leaks look like one that does not."""
+    url = "https://img.example/a.png"
+    items = [{"summary": f'<img src="{url}">', "icon": ""}]
+
+    def never_called(u, headers):
+        raise AssertionError("nothing is fetched while caching is off")
+
+    config = {"site": {"site_url": "https://planet.example/"}}
+    assert localize_images(items, config, fetcher=never_called,
+                           verbose=True) == {}
+    assert f"image not caching: {url}" in capsys.readouterr().out
+    assert items[0]["summary"] == f'<img src="{url}">'  # left as written
+
+
 def test_site_assets_that_cannot_load_are_dropped(tmp_path, capsys):
     """A logo or favicon the build cannot take is dropped rather than left
     for the visitor: the page falls back to its placeholders, and the
@@ -1348,23 +1567,86 @@ def test_prune_keeps_a_file_another_entry_still_names(tmp_path):
 
 def test_prune_removes_only_names_the_writer_could_have_made(tmp_path):
     """Deletion comes from scanning the directory, and only a name this
-    writer could have produced is ever removed: its own side files, any
+    writer could have produced is ever removed: its own index, any
     extension it cannot write, a directory and anything a person placed
-    here all stay where they are."""
+    here all stay where they are.  The temp file an interrupted write
+    leaves behind is the one exception -- it is ours, and it gets swept,
+    announced separately rather than in the count of unreferenced files."""
     cache = tmp_path / "images-cached"
     cache.mkdir()
     (cache / "index.json").write_text("{}", encoding="utf-8")
     (cache / "0123456789abcdef.png").write_bytes(b"PNG")  # ours, unreferenced
     (cache / "aabbccddeeff0011.png.part").write_bytes(b"PNG")  # a write in flight
     (cache / "index.tmp").write_text("{}", encoding="utf-8")
+    (cache / "cafebabecafebabe.html.part").write_text("x", encoding="utf-8")
     (cache / "cafebabecafebabe.html").write_text("x", encoding="utf-8")
     (cache / "notes.txt").write_text("mine", encoding="utf-8")
     (cache / "deadbeefdeadbeef.png").mkdir()  # a directory is not a cache file
     assert imagecache.prune_cache(img_config(tmp_path)) == (0, 1)
     assert not (cache / "0123456789abcdef.png").exists()
-    for kept in ("aabbccddeeff0011.png.part", "index.tmp", "index.json",
+    assert not (cache / "aabbccddeeff0011.png.part").exists()
+    assert not (cache / "index.tmp").exists()
+    for kept in ("index.json", "cafebabecafebabe.html.part",
                  "cafebabecafebabe.html", "notes.txt", "deadbeefdeadbeef.png"):
         assert (cache / kept).exists(), kept
+
+
+def test_prune_sweeps_a_write_an_interrupted_build_left(tmp_path):
+    """A build killed between the temp write and the rename leaves a
+    half-written file whose name may never be fetched again, so nothing
+    else would ever remove it."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {"https://kept.example/a.png":
+                        ("0123456789abcdef.png", 6 * 3600)})
+    (cache / "aabbccddeeff0011.png.part").write_bytes(b"half an image")
+    (cache / "index.json.part").write_text("{", encoding="utf-8")
+    (cache / "index.tmp").write_text("{}", encoding="utf-8")
+    imagecache.prune_cache(img_config(tmp_path))
+    assert _cache_files(cache) == ["0123456789abcdef.png", "index.json"]
+
+
+def test_prune_announces_what_it_swept(tmp_path, capsys):
+    """The point of sweeping is that it cannot go unnoticed for a year,
+    and it is said apart from the TTL counts so neither is muddled."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {"https://kept.example/a.png":
+                        ("0123456789abcdef.png", 6 * 3600)})
+    (cache / "aabbccddeeff0011.png.part").write_bytes(b"half an image")
+    assert imagecache.prune_cache(img_config(tmp_path)) == (0, 0)
+    assert "Swept 1 unfinished cache write" in capsys.readouterr().out
+    imagecache.prune_cache(img_config(tmp_path))  # nothing left, nothing to say
+    assert "Swept" not in capsys.readouterr().out
+
+
+def test_a_build_sweeps_what_a_killed_one_left(tmp_path, monkeypatch, capsys,
+                                               socket_timeout_restored):
+    """End to end: the litter of an interrupted build is gone from the
+    next one, and said out loud in its log."""
+    cache = tmp_path / "images-cached"
+    _seed_cache(cache, {"https://img.example/a.png":
+                        ("0123456789abcdef.png", 6 * 3600)})
+    (cache / "aabbccddeeff0011.png.part").write_bytes(b"half an image")
+    config = theming_config(tmp_path)
+    config["images"] = {"dir": "images-cached"}
+    _run_main(tmp_path, monkeypatch, config)
+    assert "Swept 1 unfinished cache write" in capsys.readouterr().out
+    assert _cache_files(cache) == ["0123456789abcdef.png", "index.json"]
+
+
+@pytest.mark.parametrize("name, is_ours", [
+    ("aabbccddeeff0011.png.part", True),   # an image mid-write
+    ("aabbccddeeff0011.png.tmp", True),    # the same, other suffix
+    ("index.json.part", True), ("index.tmp", True),
+    ("index.json", False),                 # the live index, never
+    ("aabbccddeeff0011.png", False),       # a live image, never
+    ("index.bak", False),                  # a person's file
+    ("aabbccddeeff0011.png.part.gz", False),
+    ("../../outside.png.part", False),     # never a path, only a name
+    ("cafebabecafebabe.html.part", False),  # not an extension we write
+])
+def test_the_sweep_recognizes_only_its_own_temp_files(name, is_ours):
+    from pyplanet2.imagecache import _leftover_temp
+    assert _leftover_temp(name) is is_ours
 
 
 def test_prune_never_breaks_a_build(tmp_path, capsys):
@@ -1380,3 +1662,269 @@ def test_prune_never_breaks_a_build(tmp_path, capsys):
         assert imagecache.prune_cache(img_config(tmp_path)) == (0, 0)
     assert (cache / "0123456789abcdef.png").exists()  # not one file removed
     assert "not pruning" in capsys.readouterr().out
+
+
+# --- feed fetching: timeouts, retries, progress -----------------------------
+
+class _DeadFeed:
+    """What feedparser hands back for a remote feed it could not read."""
+    entries = []
+    bozo = True
+    bozo_exception = OSError("<urlopen error simulated offline>")
+
+
+@pytest.fixture
+def socket_timeout_restored():
+    """main() sets a process-wide socket timeout; no test may leak one."""
+    previous = socket.getdefaulttimeout()
+    yield
+    socket.setdefaulttimeout(previous)
+
+
+def _no_sleep(monkeypatch):
+    """Keep the retry waits out of the test run, and record them."""
+    slept = []
+    monkeypatch.setattr(core.time, "sleep", slept.append)
+    return slept
+
+
+def _run_main(tmp_path, monkeypatch, config, *args):
+    """Run the command-line entry point on a config, from tmp_path so any
+    image cache directory it wants is one of its own.  Any further
+    arguments are command-line flags, in front of the config path."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    core.main([*args, str(config_file)])
+
+
+def test_main_sets_the_feed_timeout(tmp_path, monkeypatch,
+                                    socket_timeout_restored):
+    """feedparser accepts no timeout argument, so the socket default is
+    the only built-in way to bound a feed fetch.  main() sets it -- and
+    only there, so importing this package leaves a program's own default
+    alone."""
+    seen = []
+    monkeypatch.setattr(core.socket, "setdefaulttimeout", seen.append)
+    _run_main(tmp_path, monkeypatch, theming_config(tmp_path))
+    assert seen[:1] == [core.FEED_TIMEOUT]
+
+
+def test_the_verbose_flag_reaches_the_image_pass(tmp_path, monkeypatch):
+    """-v is a command-line flag rather than a config one, so it travels
+    to the image pass by argument: a person debugging one build gets the
+    detail without having to edit the config the site is built from."""
+    seen = []
+    monkeypatch.setattr(core, "localize_images",
+                        lambda items, config, fetcher=None, verbose=False:
+                        seen.append(verbose) or {})
+    _run_main(tmp_path, monkeypatch, theming_config(tmp_path), "-v")
+    _run_main(tmp_path, monkeypatch, theming_config(tmp_path))
+    assert seen == [True, False]
+
+
+def test_a_build_says_whether_it_caches_images_at_all(tmp_path, monkeypatch,
+                                                      capsys):
+    """An images section is what makes a build fetch images at all, and
+    the log says which of the two it is: without one, the page links
+    whatever the feeds named and visitors load it from there."""
+    _run_main(tmp_path, monkeypatch, theming_config(tmp_path))
+    assert "Image caching is off" in capsys.readouterr().out
+    config = theming_config(tmp_path)
+    config["images"] = img_config(tmp_path)["images"]
+    _run_main(tmp_path, monkeypatch, config)
+    assert "Image caching is off" not in capsys.readouterr().out
+
+
+def test_a_hanging_feed_is_skipped_and_not_waited_forever(tmp_path, monkeypatch,
+                                                          capsys,
+                                                          socket_timeout_restored):
+    """The point of the timeout: a host that accepts the connection and
+    then says nothing is an unreachable feed like any other, so the build
+    finishes instead of running until CI cancels the job."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    held = []
+
+    def stall_forever():
+        while True:
+            try:
+                connection, _ = listener.accept()
+                held.append(connection)          # answered by nobody
+            except OSError:
+                return
+
+    threading.Thread(target=stall_forever, daemon=True).start()
+    monkeypatch.setattr(core, "FEED_TIMEOUT", 0.5)   # never wait 10 s here
+    _no_sleep(monkeypatch)
+    config = theming_config(tmp_path)
+    host, port = listener.getsockname()
+    config["feeds"] = [{"feed": "http://%s:%d/feed.xml" % (host, port),
+                        "name": "Hanging"}]
+    started = datetime.now(timezone.utc)
+    try:
+        _run_main(tmp_path, monkeypatch, config)
+    finally:
+        for connection in held:
+            connection.close()
+        listener.close()
+
+    assert (datetime.now(timezone.utc) - started).total_seconds() < 10
+    out = capsys.readouterr().out
+    assert "WARNING: feed skipped" in out and "timed out" in out
+    assert "Feeds: 0 of 1 loaded" in out
+    assert (tmp_path / "page.html").is_file()   # the site still gets built
+
+
+def test_a_read_timeout_becomes_a_skip_and_not_a_crash(monkeypatch, capsys):
+    """urllib wraps a failed request in URLError, which feedparser
+    records, but lets a read timeout escape raw.  As an exception it
+    would abort the build, so it must arrive as the ordinary unreadable
+    feed -- the worst host in the config cannot take the run down."""
+    def stall(url, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(core.feedparser, "parse", stall)
+    _no_sleep(monkeypatch)
+    assert fetch_all_items({"feeds": [{"feed": "https://slow.example/f.xml",
+                                       "name": "Slow"}]}) == []
+    out = capsys.readouterr().out
+    assert "WARNING: feed skipped" in out and "timed out" in out
+
+
+def test_unreachable_remote_feed_is_retried_then_skipped(monkeypatch, capsys):
+    """One transient failure should not cost a day of posts, so a remote
+    feed gets its retries; only one that stays down is skipped, and the
+    skips are counted up where a log reader will see them."""
+    calls = []
+    monkeypatch.setattr(core.feedparser, "parse",
+                        lambda url, **kw: calls.append(url) or _DeadFeed())
+    slept = _no_sleep(monkeypatch)
+
+    items = fetch_all_items({"feeds": [{"feed": "https://dead.example/f.xml",
+                                        "name": "Dead blog"}]})
+
+    assert items == []
+    assert len(calls) == core.FEED_RETRIES + 1       # first try, then retries
+    assert slept == [core.FEED_RETRY_WAIT] * core.FEED_RETRIES
+    out = capsys.readouterr().out
+    assert "[1/1] https://dead.example/f.xml" in out
+    assert "retrying in %g s: attempt 2 of %d" % (core.FEED_RETRY_WAIT,
+                                                  core.FEED_RETRIES + 1) in out
+    assert "WARNING: feed skipped" in out
+    assert "Feeds: 0 of 1 loaded, 1 skipped" in out
+
+
+def test_a_feed_that_recovers_on_a_retry_is_not_skipped(tmp_path, monkeypatch,
+                                                        capsys):
+    # only a remote feed is ever retried, so the feed is remote and the
+    # bytes come from the local test feed
+    parsed = feedparser.parse(str(REPO / "test-data" / "atom.xml"),
+                              resolve_relative_uris=False, sanitize_html=False)
+    state = {"attempts": 0}
+
+    def flaky(url, **kwargs):
+        state["attempts"] += 1
+        return _DeadFeed() if state["attempts"] == 1 else parsed
+
+    monkeypatch.setattr(core.feedparser, "parse", flaky)
+    _no_sleep(monkeypatch)
+    items = fetch_all_items({"feeds": [
+        {"feed": "https://flaky.example/feed.xml", "name": "Flaky"}]})
+
+    assert items and state["attempts"] == 2
+    out = capsys.readouterr().out
+    assert "attempt 2 of" in out
+    assert "feed skipped" not in out
+    assert "Feeds: all 1 loaded" in out and "item(s) kept" in out
+
+
+def test_a_broken_local_feed_is_never_retried(tmp_path, monkeypatch):
+    """The retries are for the network.  A local file is the same file on
+    the next attempt, so a fatal feed costs exactly one parse."""
+    calls = []
+    real_parse = feedparser.parse
+
+    def counting_parse(url, **kwargs):
+        calls.append(str(url))
+        return real_parse(url, **kwargs)
+
+    monkeypatch.setattr(core.feedparser, "parse", counting_parse)
+    with pytest.raises(SystemExit):
+        fetch_all_items({"feeds": [{"feed": str(tmp_path / "nope.xml"),
+                                    "name": "Missing"}]})
+    assert len(calls) == 1
+
+
+def test_a_partially_readable_feed_warns_but_contributes(monkeypatch, capsys):
+    """Entries survived a document that did not parse to the end, so the
+    feed contributes what it gave -- and says so, because a quietly short
+    feed is otherwise indistinguishable from a quiet one."""
+    real = feedparser.parse(str(REPO / "test-data" / "atom.xml"),
+                            resolve_relative_uris=False, sanitize_html=False)
+
+    class Partial:
+        entries = real.entries
+        bozo = True
+        bozo_exception = ValueError("no element found: line 12, column 0")
+
+    monkeypatch.setattr(core.feedparser, "parse", lambda url, **kw: Partial())
+    items = fetch_all_items({"feeds": [
+        {"feed": str(REPO / "test-data" / "atom.xml"), "name": "Partial"}]})
+
+    assert items
+    out = capsys.readouterr().out
+    assert "WARNING: feed incomplete" in out
+    assert "item(s) kept" in out and "feed skipped" not in out
+
+
+# --- output files arrive whole ---------------------------------------------
+
+def test_generators_leave_no_part_files(tmp_path):
+    """Both documents land by rename, so nothing of the temporary name is
+    left behind in the directory the site is published from."""
+    config = theming_config(tmp_path)
+    items = fetch_all_items(config)
+    generate_atom_feed(items, config["output"]["atom_feed"], config)
+    generate_html_view(items, config["output"]["html_view"], TEMPLATE_DIR,
+                       config)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["atom.xml",
+                                                          "page.html"]
+    xml = Path(config["output"]["atom_feed"]).read_text(encoding="utf-8")
+    ElementTree.fromstring(xml)  # the renamed file is the whole document
+
+
+def test_write_atomic_keeps_the_previous_file_on_failure(tmp_path, monkeypatch):
+    """A write that never lands must leave the last complete document
+    standing, not a truncated page for a visitor to half-render."""
+    target = tmp_path / "planet.html"
+    target.write_text("the last complete page", encoding="utf-8")
+
+    def refusing(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(core.os, "replace", refusing)
+    with pytest.raises(OSError):
+        core.write_atomic(target, "half a page")
+    assert target.read_text(encoding="utf-8") == "the last complete page"
+    assert [p.name for p in tmp_path.iterdir()] == ["planet.html"]
+
+
+def test_write_atomic_removes_a_part_that_failed_to_write(tmp_path, monkeypatch):
+    """A half-written temporary file is nobody's: it is this writer's own
+    name beside the output, and leaving it would leave litter in a
+    published directory."""
+    target = tmp_path / "atom.xml"
+    original = Path.write_text
+
+    def half_write(self, text, encoding=None):
+        original(self, text[:10], encoding=encoding)   # only what fit
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(Path, "write_text", half_write)
+    with pytest.raises(OSError):
+        core.write_atomic(target, "<feed>" * 40)
+    monkeypatch.undo()
+    assert list(tmp_path.iterdir()) == []   # nothing left for the next run

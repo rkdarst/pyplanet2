@@ -39,7 +39,8 @@ _trusted_name() limits what the index is allowed to name, as defense
 in depth, but it is not a sandbox.  prune_cache() deletes by scanning
 the directory for names this writer could have produced rather than by
 obeying the paths the index mentions, so an index cannot aim a removal
-anywhere.
+anywhere; the temp files an interrupted write leaves behind are swept
+by name the same way.
 """
 import hashlib
 import ipaddress
@@ -194,6 +195,32 @@ def _trusted_name(file_name):
                 and file_name.rsplit(".", 1)[-1] in CACHE_EXTS)
 
 
+# The temp names this module writes: an image's copy beside its final
+# name, and the two index.json is swapped in through.
+TEMP_SUFFIXES = (".part", ".tmp")
+TEMP_STEMS = ("index", "index.json")
+
+
+def _leftover_temp(name):
+    """True for a temp file this writer may have left half-written.
+
+    A build killed between the temp write and the rename leaves one of
+    these behind.  The stem still has to be a name this module could
+    itself have used -- a hash-shaped image name or the index's own --
+    so the sweep adds no path an untrusted index could have aimed a
+    deletion at: prune_cache takes these names from its own directory
+    listing and never from the index.  A .part hanging off any other
+    name, a person's file, is not ours to delete.
+    """
+    for suffix in TEMP_SUFFIXES:
+        if name.endswith(suffix):
+            stem = name[:-len(suffix)]
+            break
+    else:
+        return False
+    return stem in TEMP_STEMS or _trusted_name(stem)
+
+
 def _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl):
     """Cached paths when the entry is complete and within its TTL."""
     file_name = entry.get("file", "")
@@ -215,7 +242,35 @@ def _reusable(entry, cache_dir):
     return None
 
 
-def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
+def _report_image(verbose, status, url, note=""):
+    """Say what became of one image, for --verbose.
+
+    The three states are the ones worth telling apart when a cache is
+    not doing what you expect: "caching" (the build downloaded and
+    stored it now), "already cached" (nothing to do, or a conditional
+    request that changed nothing) and "not caching" (this build caches
+    no images, so the visitor loads it from the feed's own host).  What
+    the cache refused to take prints in every mode, since a dropped
+    image changes the post the reader sees; these lines are the quiet
+    ones, which would otherwise be a wall of text in an ordinary log.
+    """
+    if verbose:
+        print(f"    image {status}: {url}{note}", flush=True)
+
+
+def _referenced_images(items):
+    """The http image urls the items point at, sorted, deduplicated."""
+    urls = set()
+    for item in items:
+        urls.update(u for u in SRC_ATTR_RE.findall(item.get("summary") or "")
+                    if is_http_url(u))
+        if is_http_url(item.get("icon") or ""):
+            urls.add(item["icon"])
+    return sorted(urls)
+
+
+def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher,
+                      verbose=False):
     entry = index.get(url) or {}
     headers = {}
     if entry.get("etag"):
@@ -234,6 +289,7 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
         if not file_name:
             return None
         index.setdefault(url, {})["fetched_at"] = now_iso
+        _report_image(verbose, "already cached", url, " (revalidated)")
         return _paths(file_name, dir_name, base_url)
     if status != 200:
         return None
@@ -259,17 +315,19 @@ def _fetch_into_cache(url, index, cache_dir, dir_name, base_url, now, fetcher):
     index[url] = {"file": file_name, "etag": resp_headers.get("etag"),
                   "last_modified": resp_headers.get("last-modified"),
                   "fetched_at": now_iso}
+    _report_image(verbose, "caching", url, f" ({len(body)} bytes)")
     return _paths(file_name, dir_name, base_url)
 
 
-def localize_site_image(url, config, fetcher=None):
+def localize_site_image(url, config, fetcher=None, verbose=False):
     """Cache one site-level image (e.g. a favicon); return a local path.
 
     Local (non-URL) values are returned unchanged, to be used as
     given.  Any remote image the cache cannot take is dropped (empty
     return) -- oversized, an SVG, or one the build could not reach or
     recognize; a site-level image has no content note to carry the
-    warning, so dropping it only prints.
+    warning, so dropping it only prints.  ``verbose`` says which of the
+    two quiet states it ended in, as localize_images() does for feeds.
     """
     if not url or not is_http_url(url):
         return url
@@ -282,13 +340,15 @@ def localize_site_image(url, config, fetcher=None):
     if paths is None:
         try:
             paths = _fetch_into_cache(url, index, cache_dir, dir_name,
-                                      base_url, now, fetcher)
+                                      base_url, now, fetcher, verbose)
         except ImageTooLarge:
             print(f"Warning: dropping oversized image, not cached: {url}")
             return ""
         except SvgImage:
             print(f"Warning: dropping SVG image, not cached: {url}")
             return ""
+    else:
+        _report_image(verbose, "already cached", url)
     if paths is not None:
         save_index(cache_dir, index)
         return paths["html"]
@@ -322,34 +382,40 @@ def drop_uncacheable_images(items, reasons):
         item["summary"] = summary
 
 
-def localize_images(items, config, fetcher=None):
+def localize_images(items, config, fetcher=None, verbose=False):
     """Download all item images into the cache dir and attach img_map.
 
     items get an "img_map" ({url: {"html": rel, "atom": abs}}) used by
     the generators via rewrite_images(), and localized feed icons are
     rewritten in place (icons only appear in the HTML view).
+
+    ``verbose`` names every image the pass looked at and what became of
+    it -- see _report_image().
     """
+    urls = _referenced_images(items)
+    if not (config.get("images") or {}):
+        # The documented opt-out: nothing is cached, every url stays as
+        # written, and the visitor loads it from the feed's own host.
+        if verbose:
+            for url in urls:
+                _report_image(True, "not caching", url)
+        return {}
     dir_name, cache_dir, ttl, base_url, fetcher = _cache_settings(
         config, fetcher)
     now = datetime.now(timezone.utc)
     index = load_index(cache_dir)
 
-    urls = set()
-    for item in items:
-        urls.update(u for u in SRC_ATTR_RE.findall(item.get("summary") or "")
-                    if is_http_url(u))
-        if is_http_url(item.get("icon") or ""):
-            urls.add(item["icon"])
-
     mapping = {}
     reasons = {}
-    for url in sorted(urls):
+    fetched = 0
+    for url in urls:
         entry = index.get(url) or {}
         paths = _fresh_paths(entry, cache_dir, dir_name, base_url, now, ttl)
         if paths is None:
+            fetched += 1
             try:
                 paths = _fetch_into_cache(url, index, cache_dir, dir_name,
-                                          base_url, now, fetcher)
+                                          base_url, now, fetcher, verbose)
             except ImageTooLarge:
                 # Too big to cache; leaving it remote would leak
                 # visitor requests, so it gets dropped instead.
@@ -367,6 +433,9 @@ def localize_images(items, config, fetcher=None):
                 reasons[url] = UNCACHED_NOTE
                 print(f"Warning: image not cached, removed from the "
                       f"post: {url}")
+        else:
+            # Within the TTL, so this build asked nothing of the host.
+            _report_image(verbose, "already cached", url)
         if paths is not None:
             mapping[url] = paths
 
@@ -374,6 +443,14 @@ def localize_images(items, config, fetcher=None):
         drop_uncacheable_images(items, reasons)
 
     if urls:
+        # Every url counted here ends in one of the two: a local copy the
+        # page can link, or one taken out of the post with a note.  An
+        # image the build could not address in the first place -- a
+        # relative src in a feed read from a local file, which carries no
+        # base to resolve against -- is not in this set at all, so these
+        # counts never need to account for it.
+        print(f"Images: {len(urls)} referenced, {len(mapping)} available, "
+              f"{fetched} fetched this run, {len(reasons)} dropped")
         save_index(cache_dir, index)
     if mapping:
         for item in items:
@@ -425,10 +502,15 @@ def prune_cache(config, touched=()):
 
     Deletion works from what is on the disk and never from the file
     values the index holds, and only names _trusted_name() accepts are
-    removed: index.json, its .part and .tmp companions, any extension
-    this writer could not have produced, and anything a person placed
-    here are all left where they are.  Pruning never fails a build.
-    Returns (entries forgotten, files removed).
+    removed as unreferenced: index.json and any extension this writer
+    could not have produced are left where they are.  The temp files
+    this writer leaves behind when a build is killed mid-write -- see
+    _leftover_temp() -- are the one exception, collected and announced
+    here because nothing else ever will.  Such a sweep is counted in
+    neither number, it gets its own line, so the two counts keep meaning
+    what they always did: the entries the TTL took and the files none of
+    them names.  Pruning never fails a build.
+    Returns (entries forgotten, unreferenced files removed).
     """
     _dir, cache_dir, ttl, _base, _fetcher = _cache_settings(config)
     if not cache_dir.is_dir():
@@ -453,9 +535,25 @@ def prune_cache(config, touched=()):
         dropped += 1
 
     named = {entry.get("file") for entry in kept.values()}
-    removed = 0
+    removed = swept = 0
     for path in sorted(cache_dir.iterdir()):
-        if path.name in named or not _trusted_name(path.name):
+        if path.name in named:
+            continue
+        # A build killed between the temp write and the rename leaves a
+        # half-written file here, and nothing else ever collects it: it
+        # is not a name an entry can hold, so the pass below skips it,
+        # and the name is a digest of bytes that may never be fetched
+        # again.  Sweep it, and say so -- the point is that it cannot sit
+        # in the published directory unnoticed for a year.
+        if _leftover_temp(path.name):
+            try:
+                if path.is_file():
+                    path.unlink()
+                    swept += 1
+            except OSError as exc:  # a stuck file must not stop a build
+                print(f"Warning: could not remove {path}: {exc}")
+            continue
+        if not _trusted_name(path.name):
             continue
         try:
             if path.is_file():
@@ -464,6 +562,9 @@ def prune_cache(config, touched=()):
         except OSError as exc:  # a stuck file must not stop a build
             print(f"Warning: could not remove {path}: {exc}")
 
+    if swept:
+        print(f"Swept {swept} unfinished cache write(s) left by an "
+              "interrupted build")
     if kept != index:
         save_index(cache_dir, kept)
     return dropped, removed

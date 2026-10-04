@@ -6,6 +6,15 @@ site:
   site_url: "https://rkdarst.github.io/pyplanet2/"
   atom_feed_url: "https://rkdarst.github.io/pyplanet2/atom.xml"
   # feed_guid: "urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6"  (optional)
+  intro: |
+    This is a demo aggregator built from sample feeds, rebuilt by the CI
+    on every push.  It says what the page is in markdown; `site.intro`
+    in the config is where that note lives.
+
+    ## Ground rules
+
+    - Posts come from the feeds listed at the right.
+    - Everything here is sanitized, so formatting may be wrong.
 
 # Output file paths
 output:

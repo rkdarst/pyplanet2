@@ -66,10 +66,15 @@ match.**
   the `--post-clamp` CSS variable in a stylesheet listed under
   `output.css`.
 
+Both are written whole -- into a temporary `.part` name and renamed --
+so a build that dies partway through one leaves the last complete
+versions standing rather than a truncated page for a visitor to
+half-render.  Cached images and the cache index land the same way.
+
 ## Requirements
 
 - Python 3.10+
-- feedparser, feedgenerator, jinja2, bleach, pyyaml
+- feedparser, feedgenerator, jinja2, bleach, pyyaml, markdown
   (installed automatically with the package)
 
 ## Usage
@@ -80,15 +85,41 @@ Install the package, then always pass a config file:
 pip install .
 pyplanet2 config.yaml
 # (also runnable without installing:  python -m pyplanet2 config.yaml)
+pyplanet2 -v config.yaml        # the same build, naming every image
 ```
 
 Relative output paths in the config resolve against the current
 directory, so run it from where the outputs should land.
 
+The build names every feed as it tries it and ends with a count of what
+loaded, so a feed that quietly stopped contributing is visible in the
+log instead of guessed at afterwards.
+
+`-v` (`--verbose`) adds one line per image the build looked at, saying
+what became of it: `image caching: <url>` for one it downloaded and
+stored now, `image already cached: <url>` for a copy it reused without
+asking the host for it -- or after a conditional request that changed
+nothing -- and `image not caching: <url>` when the config carries no
+`images:` section, which leaves that image as the feed wrote it for the
+visitor to load from the feed's own host.  What a build refuses to
+cache prints in an ordinary run as well, since dropping an image
+changes the post a reader sees: an SVG, one larger than
+`image_cache_max_bytes`, and one the build could not reach.
+
 A local `feeds[].url` path that does not exist (or cannot be parsed)
 stops the build with an error; an unreachable remote feed is skipped
-with a `WARNING` instead.  In GitHub Actions runs both are also
-flagged as workflow annotations.
+with a `WARNING` instead, after two further attempts two seconds apart
+(the `FEED_*` constants at the top of `pyplanet2/core.py`).  In GitHub
+Actions runs both are also flagged as workflow annotations.
+
+A host that accepts the connection and then says nothing is given 10
+seconds before it counts as unreachable.  That is the socket default,
+the only timeout feedparser honours, and it bounds each socket
+operation: a host that trickles bytes can still stretch one fetch out.
+A feed that parses but breaks partway keeps the entries that did parse
+and says so with a `WARNING` as well, since a quietly short feed would
+otherwise look exactly like a quiet one.  None of this fails a build --
+a bad upstream costs posts for that run, not the site.
 
 ## Configuration
 
@@ -107,6 +138,9 @@ site:
                                     # optional: a permanent id for the feed,
                                     # defaults to atom_feed_url (useful if the
                                     # URL might move)
+  # intro: |                        # optional: a note above the first post,
+                                    # in markdown -- see "A note above the
+                                    # posts"
 
 # Output file paths
 output:
@@ -169,6 +203,51 @@ it became unconditional this was the per-feed `resolve_urls` option;
 that key no longer exists, and an old config carrying it is simply
 ignored.)
 
+### A note above the posts
+
+`site.intro` holds the page's own words: what the aggregator is, who
+runs it, what the rules are.  It is markdown, rendered above the first
+post.
+
+```yaml
+site:
+  intro: |
+    Reading I keep, gathered from a handful of blogs.  Every post here
+    belongs to its author; only the links are mine.
+
+    ## Ground rules
+
+    - Posts appear as their feeds serve them, apart from whatever the
+      sanitizer had to take out.
+    - [Email me](mailto:me@example.com) about a broken link.
+```
+
+The syntax is ordinary markdown -- headings, emphasis, links, lists,
+blockquotes, fenced code, rules -- rendered by
+[Python-Markdown](https://python-markdown.github.io/) with nothing
+enabled beyond fenced code blocks, so there are no tables and no
+footnotes.  Two habits from other tools are worth leaving at the door:
+
+* **A blank line separates paragraphs.** A single newline means "this
+  sentence continues", so wrapping the file at 70 columns wraps the
+  page at 70 columns too.
+* **A heading comes out one level down**, because the page's `<h1>` is
+  its title: `# Ground rules` renders as an `<h2>`, `##` as an `<h3>`,
+  and `######` stays an `<h6>`.
+
+An image has to be a path beside the page (`![alt](badge.png)`).  One
+that names another host is dropped with a warning: the build never met
+that host, and a visitor should not have to knock on it either.  A
+picture of the site itself belongs in `output.logo`, which is fetched
+and cached like the favicon.  Literal HTML is welcome as far as the
+sanitizer a feed's HTML faces is welcome -- so no scripts, no frames,
+no `javascript:` links, and no exception to that rule depending on
+which config key the markup arrived under.
+
+Only the HTML view carries the note.  The Atom feed's subtitle field
+reaches most readers escaped, where markdown would read as tags.  A
+theme template can move it or drop it with the `intro` block.
+
 ## Customizing the HTML view
 
 The HTML page is a Jinja2 template.  Both `paths` keys are optional;
@@ -191,12 +270,14 @@ paths:
 ```
 
 Overridable blocks: `title`, `styles`, `head_extra`, `header`,
-`generated_info`, `posts`, `post`, `post_icon`, `post_meta`,
-`post_summary`, `sidebar` (right-side feed list), `footer`, `scripts`.
+`generated_info`, `sidebar` (right-side feed list), `intro` (the site's
+own note, from `site.intro`), `posts`, `post`, `post_icon`, `post_meta`,
+`post_summary`, `footer`, `scripts`.
 The four `post*` blocks are `scoped`, so `item` is available in them.
 A template that does not `extends` replaces the page completely.
 Variables: `site_title`, `atom_feed_url`, `generated_at`, `logo`, `favicon`,
-`css_files`, `posts` (each with `title`, `link`, `date`, `feed_title`,
+`css_files`, `intro` (sanitized HTML, so pass it through `|safe`),
+`posts` (each with `title`, `link`, `date`, `feed_title`,
 `site`, `icon`, `summary`) and `feeds` (every configured feed as
 `title`/`feed`/`site`/`icon`); the base template uses it for the
 default right-hand feed sidebar, which a theme can restyle or replace:
@@ -255,7 +336,9 @@ domain (no IP disclosure to feed hosts), posts keep their images even
 if the upstream ones vanish, and the cache persists between CI runs
 via the deployed `gh-pages` branch: entries younger than `ttl_days`
 are not touched at all, older ones are revalidated with a conditional
-request that transfers nothing when the image is unchanged.
+request that transfers nothing when the image is unchanged.  Running the
+build with `-v` names every image it looked at and which of these it
+did -- see [Usage](#usage).
 
 That window also bounds how large the cache grows.  Whatever the build
 did not refer to is forgotten once it passes `ttl_days`, and the files
@@ -270,6 +353,19 @@ action then removes the files in the Pages branch that the publish
 directory no longer has.  Setting it to `true` would leave the pruned
 images on the branch for the next run's restore step to fetch straight
 back.
+
+What a killed build leaves behind is swept by the same pass.  Every
+file a build writes -- an image, the index, the page and the feed --
+goes to a temporary sibling first and is renamed into place, so a run
+stopped between those two steps can leave a `.part` file behind.  The
+image cache is the one place that would keep it forever: its name is a
+digest of the bytes it never finished writing, so if that image is
+never fetched again nothing has cause to remove it, and it would be
+published with the site.  Pruning collects those leftovers and says how
+many it swept, so they cannot sit there unnoticed; it does so by name
+alone, and only names this cache writes itself, so the index still
+cannot point a deletion at anything and a file a person placed in the
+directory stays where it is.
 
 ```yaml
 images:
