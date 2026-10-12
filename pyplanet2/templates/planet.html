@@ -172,12 +172,6 @@
   {%- endblock %}
 
   <main class="planet">
-    {%- block generated_info %}
-    <p class="generated">Generated <span class="generated-at">{{ generated_at }}</span> ·
-      <a class="feed-link" href="{{ atom_feed_url }}">Atom feed</a> ·
-      This page and feed are sanitized for security, formatting may be wrong.</p>
-    {%- endblock %}
-
     {%- block intro scoped %}
     {% if intro %}
     {#- The site's own words, from site.intro in the config, already put
@@ -186,10 +180,17 @@
     {% endif %}
     {%- endblock %}
 
+    {%- block generated_info %}
+    <p class="generated">Generated <span class="generated-at">{{ generated_at }}</span> ·
+      This page and feed are sanitized for security, formatting may be wrong.</p>
+    {%- endblock %}
+
     {%- block sidebar %}
     {% if feeds %}
     <aside class="feeds-sidebar">
-      <h2>Feeds</h2>
+      <h2>Planet's combined feed</h2>
+      <p><a class="feed-link" href="{{ atom_feed_url }}">Atom feed</a></p>
+      <h2>Member feeds</h2>
       <ul>
         {% for f in feeds %}
         <li><a href="{{ f.site }}">{{ f.title }}</a>
